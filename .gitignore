@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Local Environment Secrets
+.env
+**/ .env
+
+# Build outputs
+dist/
+**/dist/
+
+# Local MongoDB data
+.mongodb*/
+**/.mongodb*/

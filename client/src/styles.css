@@ -1,0 +1,145 @@
+* {
+  box-sizing: border-box;
+  font-family: Arial, sans-serif;
+}
+body {
+  margin: 0;
+  background: #f5f7fb;
+  color: #1f2937;
+}
+.card {
+  background: #fff;
+  max-width: 900px;
+  margin: 24px auto;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+}
+.form {
+  display: grid;
+  gap: 10px;
+}
+input,
+button {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+}
+button {
+  background: #0f62fe;
+  color: #fff;
+  cursor: pointer;
+}
+.bank-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+.bank-card {
+  background: #f3f4f6;
+  color: #111827;
+}
+.bank-card.selected {
+  background: #0f62fe;
+  color: #fff;
+}
+.admin-layout {
+  display: grid;
+  gap: 16px;
+}
+.admin-layout-main {
+  grid-template-columns: 1fr 1fr;
+}
+.admin-layout-logs {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.admin-full {
+  min-height: 100vh;
+  padding: 20px;
+}
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.admin-actions {
+  display: flex;
+  gap: 10px;
+}
+.admin-panel {
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+}
+.admin-logs-screen {
+  min-height: calc(100vh - 100px);
+  display: flex;
+  flex-direction: column;
+}
+.admin-logs-list {
+  max-height: none;
+  overflow: auto;
+  flex: 1;
+}
+.admin-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.list {
+  display: grid;
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+}
+.list-item {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #111827;
+}
+.admin-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+}
+.admin-user-open {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+}
+.admin-user-actions {
+  display: flex;
+  gap: 8px;
+}
+.option-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 4px 0;
+}
+.option-card {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #111827;
+  padding: 12px 18px;
+  border-radius: 12px;
+  min-width: 180px;
+  max-width: 180px;
+  min-height: 48px;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.2;
+}
+.error {
+  color: #b91c1c;
+}
