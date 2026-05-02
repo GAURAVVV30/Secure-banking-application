@@ -9,9 +9,17 @@ const transactionSchema = new mongoose.Schema(
         return this.type === "transfer";
       }
     },
-    receiver: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    receiver: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: "User", 
+      required: function () {
+        return this.type === "transfer";
+      } 
+    },
     amount: { type: Number, required: true },
-    type: { type: String, enum: ["transfer", "credit"], default: "transfer" },
+    type: { type: String, enum: ["transfer", "credit", "purchase"], default: "transfer" },
+    source: { type: String, enum: ["direct", "virtual_card"], default: "direct" },
+    merchantName: { type: String, default: "" },
     status: {
       type: String,
       enum: ["completed", "flagged", "Pending Admin Approval"],

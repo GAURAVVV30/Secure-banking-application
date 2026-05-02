@@ -1,0 +1,325 @@
+[{
+  "_id": {
+    "$oid": "69f2190c185519105cc93db2"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "chaos@gmail.com"
+  },
+  "createdAt": {
+    "$date": "2026-04-29T14:43:24.708Z"
+  },
+  "updatedAt": {
+    "$date": "2026-04-29T14:43:24.708Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f21d0312eb2930b3e84348"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "chaos@gmail.com"
+  },
+  "createdAt": {
+    "$date": "2026-04-29T15:00:19.982Z"
+  },
+  "updatedAt": {
+    "$date": "2026-04-29T15:00:19.982Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f2235c4c14aaafd8a93b7f"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "chaos@gmail.com"
+  },
+  "createdAt": {
+    "$date": "2026-04-29T15:27:24.751Z"
+  },
+  "updatedAt": {
+    "$date": "2026-04-29T15:27:24.751Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f2271c1253697309e6f00d"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "chaos@gmail.com"
+  },
+  "createdAt": {
+    "$date": "2026-04-29T15:43:24.305Z"
+  },
+  "updatedAt": {
+    "$date": "2026-04-29T15:43:24.305Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f229a74c131b20d65973e3"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "chaos@gmail.com"
+  },
+  "createdAt": {
+    "$date": "2026-04-29T15:54:15.860Z"
+  },
+  "updatedAt": {
+    "$date": "2026-04-29T15:54:15.860Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f32d88160f5544e4b7c138"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "chaos@gmail.com"
+  },
+  "createdAt": {
+    "$date": "2026-04-30T10:23:04.477Z"
+  },
+  "updatedAt": {
+    "$date": "2026-04-30T10:23:04.477Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f459e7172d14e4b86b14aa"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "chaos@gmail.com"
+  },
+  "createdAt": {
+    "$date": "2026-05-01T07:44:39.821Z"
+  },
+  "updatedAt": {
+    "$date": "2026-05-01T07:44:39.821Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f45f7c97b97336ab692711"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "chaos@gmail.com"
+  },
+  "createdAt": {
+    "$date": "2026-05-01T08:08:28.363Z"
+  },
+  "updatedAt": {
+    "$date": "2026-05-01T08:08:28.363Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f4602497b97336ab692723"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "chaos@gmail.com"
+  },
+  "createdAt": {
+    "$date": "2026-05-01T08:11:16.605Z"
+  },
+  "updatedAt": {
+    "$date": "2026-05-01T08:11:16.605Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f4607197b97336ab692735"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "chaos@gmail.com"
+  },
+  "createdAt": {
+    "$date": "2026-05-01T08:12:33.910Z"
+  },
+  "updatedAt": {
+    "$date": "2026-05-01T08:12:33.910Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f5f9ec18e6f788f78fe661"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "chaos@gmail.com"
+  },
+  "ip": "::1",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+  "deviceType": "Unknown",
+  "createdAt": {
+    "$date": "2026-05-02T13:19:40.869Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f60d366899c8bcdef1cf9f"
+  },
+  "user": {
+    "$oid": "69f60d366899c8bcdef1cf9d"
+  },
+  "action": "register",
+  "metadata": {
+    "email": "shiva@gmail.com"
+  },
+  "ip": "::ffff:127.0.0.1",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0",
+  "deviceType": "Unknown",
+  "createdAt": {
+    "$date": "2026-05-02T14:41:58.358Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f60d7b6899c8bcdef1cfa3"
+  },
+  "user": {
+    "$oid": "69f60d366899c8bcdef1cf9d"
+  },
+  "action": "complete_profile",
+  "metadata": {
+    "bankName": "SBI",
+    "bankBranch": "karur",
+    "accountType": "savings"
+  },
+  "ip": "::ffff:127.0.0.1",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0",
+  "deviceType": "Unknown",
+  "createdAt": {
+    "$date": "2026-05-02T14:43:07.065Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f60d8d6899c8bcdef1cfa7"
+  },
+  "user": {
+    "$oid": "69f60d366899c8bcdef1cf9d"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "shiva@gmail.com"
+  },
+  "ip": "::ffff:127.0.0.1",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0",
+  "deviceType": "Unknown",
+  "createdAt": {
+    "$date": "2026-05-02T14:43:25.294Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f615ea9af3d47980209474"
+  },
+  "user": {
+    "$oid": "69f60d366899c8bcdef1cf9d"
+  },
+  "action": "credit",
+  "metadata": {
+    "amount": 800
+  },
+  "ip": "::ffff:127.0.0.1",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0",
+  "deviceType": "Unknown",
+  "createdAt": {
+    "$date": "2026-05-02T15:19:06.828Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f6167d9af3d479802094a7"
+  },
+  "user": {
+    "$oid": "69f60d366899c8bcdef1cf9d"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "shiva@gmail.com"
+  },
+  "ip": "::1",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+  "deviceType": "Unknown",
+  "createdAt": {
+    "$date": "2026-05-02T15:21:33.732Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f616a79af3d479802094c3"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "action": "login_success",
+  "metadata": {
+    "email": "chaos@gmail.com"
+  },
+  "ip": "::1",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+  "deviceType": "Unknown",
+  "createdAt": {
+    "$date": "2026-05-02T15:22:15.899Z"
+  },
+  "__v": 0
+}]

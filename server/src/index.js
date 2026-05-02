@@ -8,6 +8,7 @@ import { connectDB } from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import bankingRoutes from "./routes/bankingRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
 import { setSocketIO } from "./services/auditService.js";
 import { ensureAdminUser } from "./services/adminSeed.js";
 
@@ -51,6 +52,7 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.use("/api/auth", authRoutes);
 app.use("/api/banking", bankingRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/user", userRoutes);
 
 const port = Number(process.env.PORT) || 5000;
 connectDB()

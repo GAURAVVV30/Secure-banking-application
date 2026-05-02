@@ -1,0 +1,67 @@
+[{
+  "_id": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "fullName": "System Admin",
+  "email": "chaos@gmail.com",
+  "password": "$2a$10$yrStO1kOqt86JGxskA2eE.P2tKdb0V52/gNv444kq3zNwbR2VnTHu",
+  "phone": "0000000000",
+  "bankName": "",
+  "role": "admin",
+  "balance": 0,
+  "failedLoginAttempts": 0,
+  "lockUntil": null,
+  "isBlocked": false,
+  "statusFlag": "normal",
+  "lastLoginAt": {
+    "$date": "2026-05-02T15:22:15.897Z"
+  },
+  "createdAt": {
+    "$date": "2026-04-29T14:41:37.813Z"
+  },
+  "updatedAt": {
+    "$date": "2026-05-02T15:22:15.897Z"
+  },
+  "__v": 0,
+  "accountNumber": "",
+  "accountType": "",
+  "bankBranch": "",
+  "pinHash": "",
+  "isTemporallyFlagged": false,
+  "loginAttempts": 0
+},
+{
+  "_id": {
+    "$oid": "69f60d366899c8bcdef1cf9d"
+  },
+  "fullName": "shiva",
+  "email": "shiva@gmail.com",
+  "password": "$2a$10$LAvzbyIHGNYLg71YRYFHBOlU/..n2/DjWMi7OLS.iXLUDSQzxWtL2",
+  "phone": "9345885139",
+  "bankName": "SBI",
+  "bankBranch": "karur",
+  "accountNumber": "7777777777",
+  "accountType": "savings",
+  "pinHash": "$2a$10$KGWRtLHn5.eWP5/OZ8e7jesdUD8Cp/irW6PRkxbpFpA1AcQNh1tPm",
+  "accountSetupAt": {
+    "$date": "2026-05-02T14:43:07.020Z"
+  },
+  "role": "user",
+  "balance": 800,
+  "loginAttempts": 0,
+  "failedLoginAttempts": 0,
+  "lockUntil": null,
+  "isTemporallyFlagged": false,
+  "isBlocked": false,
+  "statusFlag": "normal",
+  "lastLoginAt": {
+    "$date": "2026-05-02T15:21:33.730Z"
+  },
+  "createdAt": {
+    "$date": "2026-05-02T14:41:58.349Z"
+  },
+  "updatedAt": {
+    "$date": "2026-05-02T15:21:33.730Z"
+  },
+  "__v": 0
+}]

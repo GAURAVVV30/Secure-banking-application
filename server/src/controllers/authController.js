@@ -213,3 +213,59 @@ export const login = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 };
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email, pin, newPassword } = req.body;
+    
+    if (!email || !pin || !newPassword) {
+      return res.status(400).json({ message: "Email, PIN, and new password are required" });
+    }
+
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters" });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (!user.pinHash) {
+      return res.status(400).json({ message: "Account setup is not complete. PIN is missing." });
+    }
+
+    const pinOk = await bcrypt.compare(String(pin).trim(), user.pinHash);
+    if (!pinOk) {
+      await createSecurityEvent({
+        user: user._id,
+        type: "failed_password_reset",
+        details: "Failed forgot password attempt due to invalid PIN",
+        severity: "low"
+      });
+      return res.status(403).json({ message: "Invalid PIN" });
+    }
+
+    user.password = await bcrypt.hash(String(newPassword), 10);
+    user.loginAttempts = 0;
+    user.failedLoginAttempts = 0;
+    user.lockUntil = null;
+    user.isBlocked = false;
+    user.isTemporallyFlagged = false;
+    user.statusFlag = "normal";
+    await user.save();
+
+    await createUserLog({
+      user: user._id,
+      action: "password_reset",
+      metadata: { method: "forgot_password_pin" },
+      req
+    });
+
+    return res.json({ message: "Password reset successfully. You can now login." });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};

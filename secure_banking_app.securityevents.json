@@ -1,0 +1,54 @@
+[{
+  "_id": {
+    "$oid": "69f21c3212eb2930b3e8433f"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "type": "failed_login",
+  "details": "Failed login attempt 1",
+  "severity": "low",
+  "createdAt": {
+    "$date": "2026-04-29T14:56:50.033Z"
+  },
+  "updatedAt": {
+    "$date": "2026-04-29T14:56:50.033Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f21c3512eb2930b3e84343"
+  },
+  "user": {
+    "$oid": "69f218a1454dacbace0e6fac"
+  },
+  "type": "failed_login",
+  "details": "Failed login attempt 2",
+  "severity": "low",
+  "createdAt": {
+    "$date": "2026-04-29T14:56:53.125Z"
+  },
+  "updatedAt": {
+    "$date": "2026-04-29T14:56:53.125Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69f616769af3d479802094a2"
+  },
+  "user": {
+    "$oid": "69f60d366899c8bcdef1cf9d"
+  },
+  "type": "failed_login",
+  "details": "Failed login attempt 1",
+  "severity": "low",
+  "createdAt": {
+    "$date": "2026-05-02T15:21:26.262Z"
+  },
+  "updatedAt": {
+    "$date": "2026-05-02T15:21:26.262Z"
+  },
+  "__v": 0
+}]

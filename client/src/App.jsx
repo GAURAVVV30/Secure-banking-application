@@ -5,6 +5,7 @@ import UserDashboard from "./pages/UserDashboard.jsx";
 import LoanConfirm from "./pages/LoanConfirm.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
+import { ThemeProvider } from "./context/ThemeContext.jsx";
 
 function PrivateRoute({ children, role }) {
   const { user } = useAuth();
@@ -15,33 +16,35 @@ function PrivateRoute({ children, role }) {
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route
-        path="/dashboard"
-        element={
-          <PrivateRoute role="user">
-            <UserDashboard />
-          </PrivateRoute>
-        }
-      />
-      <Route
-        path="/loan/confirm"
-        element={
-          <PrivateRoute role="user">
-            <LoanConfirm />
-          </PrivateRoute>
-        }
-      />
-      <Route
-        path="/admin"
-        element={
-          <PrivateRoute role="admin">
-            <AdminDashboard />
-          </PrivateRoute>
-        }
-      />
-    </Routes>
+    <ThemeProvider>
+      <Routes>
+        <Route path="/" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route
+          path="/dashboard"
+          element={
+            <PrivateRoute role="user">
+              <UserDashboard />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/loan/confirm"
+          element={
+            <PrivateRoute role="user">
+              <LoanConfirm />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <PrivateRoute role="admin">
+              <AdminDashboard />
+            </PrivateRoute>
+          }
+        />
+      </Routes>
+    </ThemeProvider>
   );
 }

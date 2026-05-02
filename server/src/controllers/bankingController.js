@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import User from "../models/User.js";
 import Loan from "../models/Loan.js";
 import Transaction from "../models/Transaction.js";
+import VirtualCard from "../models/VirtualCard.js";
 import { createSecurityEvent, createUserLog } from "../services/auditService.js";
 import { isHugeTransfer } from "../services/ruleEngine.js";
 
@@ -236,6 +237,121 @@ export const confirmLoan = async (req, res) => {
     });
 
     return res.status(201).json({ message: "Loan आवेदन received", loan });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const getVirtualCard = async (req, res) => {
+  try {
+    const card = await VirtualCard.findOne({ userId: req.user._id });
+    if (!card) return res.status(404).json({ message: "No virtual card found" });
+    return res.json({ card });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const generateVirtualCard = async (req, res) => {
+  try {
+    const existing = await VirtualCard.findOne({ userId: req.user._id });
+    if (existing) return res.status(400).json({ message: "Card already exists" });
+
+    let cardNumber = "";
+    for (let i = 0; i < 16; i++) {
+      cardNumber += Math.floor(Math.random() * 10).toString();
+    }
+    const cvv = Math.floor(100 + Math.random() * 900).toString();
+    const year = new Date().getFullYear() + 4;
+    const month = String(new Date().getMonth() + 1).padStart(2, "0");
+    const expiry = `${month}/${String(year).slice(-2)}`;
+
+    const card = await VirtualCard.create({
+      userId: req.user._id,
+      cardNumber,
+      cvv,
+      expiry,
+      status: "active"
+    });
+
+    return res.status(201).json({ message: "Card generated", card });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const freezeVirtualCard = async (req, res) => {
+  try {
+    const card = await VirtualCard.findOne({ userId: req.user._id });
+    if (!card) return res.status(404).json({ message: "No virtual card found" });
+
+    card.status = card.status === "frozen" ? "active" : "frozen";
+    await card.save();
+
+    return res.json({ message: `Card ${card.status}`, card });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const deleteVirtualCard = async (req, res) => {
+  try {
+    await VirtualCard.findOneAndDelete({ userId: req.user._id });
+    return res.json({ message: "Card deleted successfully" });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const processCardTransaction = async (req, res) => {
+  try {
+    const { cardNumber, cvv, expiry, amount, merchantName } = req.body;
+    const purchaseAmount = Number(amount);
+    
+    if (!purchaseAmount || purchaseAmount <= 0) {
+      return res.status(400).json({ message: "Invalid amount" });
+    }
+
+    const card = await VirtualCard.findOne({ cardNumber, cvv, expiry });
+    if (!card) return res.status(400).json({ message: "Invalid card details" });
+    if (card.status === "frozen") return res.status(400).json({ message: "Card is frozen" });
+
+    const user = await User.findById(card.userId);
+    if (!user) return res.status(404).json({ message: "Linked user not found" });
+
+    if (user.balance < purchaseAmount) {
+      return res.status(400).json({ message: "Insufficient balance" });
+    }
+
+    let status = "completed";
+    let flagReason = "";
+    
+    const currentHour = new Date().getHours();
+    const isUnusualTime = currentHour >= 1 && currentHour <= 5;
+    const isLargeAmount = purchaseAmount > 50000;
+
+    if (isLargeAmount || isUnusualTime) {
+      status = "flagged";
+      flagReason = isLargeAmount 
+        ? "Amount exceeds 50000 limit" 
+        : "Unusual transaction time";
+      user.statusFlag = "flagged";
+    }
+
+    user.balance -= purchaseAmount;
+    await user.save();
+
+    const transaction = await Transaction.create({
+      sender: user._id,
+      amount: purchaseAmount,
+      type: "purchase",
+      source: "virtual_card",
+      merchantName: merchantName || "Online Purchase",
+      status,
+      flagReason
+    });
+
+    return res.status(201).json({ message: "Transaction successful", transaction });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }

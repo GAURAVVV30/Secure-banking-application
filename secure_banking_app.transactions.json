@@ -1,0 +1,21 @@
+[{
+  "_id": {
+    "$oid": "69f615ea9af3d47980209472"
+  },
+  "receiver": {
+    "$oid": "69f60d366899c8bcdef1cf9d"
+  },
+  "amount": 800,
+  "type": "credit",
+  "source": "direct",
+  "merchantName": "",
+  "status": "completed",
+  "flagReason": "",
+  "createdAt": {
+    "$date": "2026-05-02T15:19:06.825Z"
+  },
+  "updatedAt": {
+    "$date": "2026-05-02T15:19:06.825Z"
+  },
+  "__v": 0
+}]
