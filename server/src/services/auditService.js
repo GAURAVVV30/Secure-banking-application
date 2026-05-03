@@ -9,7 +9,7 @@ export const setSocketIO = (io) => {
 
 export const createSecurityEvent = async ({ user, type, details, severity = "medium" }) => {
   const result = await query(
-    "INSERT INTO security_events (user_id, type, details, severity) VALUES ($1, $2, $3, $4) RETURNING *",
+    "INSERT INTO security_events (user_id, type, details, severity, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING *",
     [user, type, details, severity]
   );
   
@@ -49,7 +49,7 @@ const detectDeviceType = (userAgent) => {
 export const createUserLog = async ({ user, action, metadata = {}, req }) => {
   const userAgent = String(req?.headers?.["user-agent"] || "");
   const result = await query(
-    "INSERT INTO user_logs (user_id, action, metadata, ip, user_agent, device_type) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+    "INSERT INTO user_logs (user_id, action, metadata, ip, user_agent, device_type, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *",
     [user, action, JSON.stringify(metadata), extractIpAddress(req), userAgent, detectDeviceType(userAgent)]
   );
 

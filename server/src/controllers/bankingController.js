@@ -13,11 +13,35 @@ export const getBalance = async (req, res) => {
   }
 };
 
+export const getAggregatedTotals = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    // Total Received: Transfers where I am receiver OR Deposits where I am the account owner
+    const receivedRes = await query(
+      "SELECT SUM(amount) as total FROM transactions WHERE (receiver_id = $1 OR (sender_id = $1 AND type = 'credit')) AND status = 'completed'",
+      [userId]
+    );
+    // Total Outgoing: All transactions marked as debit where I am the sender
+    const outgoingRes = await query(
+      "SELECT SUM(amount) as total FROM transactions WHERE sender_id = $1 AND type = 'debit' AND status = 'completed'",
+      [userId]
+    );
+
+    return res.json({
+      totalReceived: parseFloat(receivedRes.rows[0].total || 0),
+      totalOutgoing: parseFloat(outgoingRes.rows[0].total || 0)
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 export const transferFunds = async (req, res) => {
   const client = await getClient();
   try {
     const { receiverPhone, amount, pin } = req.body;
     const transferAmount = Number(amount);
+    
     if (!transferAmount || transferAmount <= 0) {
       return res.status(400).json({ message: "Invalid transfer amount" });
     }
@@ -33,77 +57,60 @@ export const transferFunds = async (req, res) => {
       return res.status(400).json({ message: "PIN not set for this account" });
     }
 
-    const pinOk = await bcrypt.compare(String(pin), sender.pinHash);
+    const pinOk = await bcrypt.compare(String(pin).trim(), sender.pinHash);
     if (!pinOk) {
-      return res.status(403).json({ message: "Invalid PIN" });
-    }
-    if (!/^\d{10}$/.test(String(receiverPhone || "").trim())) {
-      return res.status(400).json({ message: "Receiver phone must be 10 digits" });
+      return res.status(403).json({ message: "Invalid Security PIN" });
     }
 
     const receiverResult = await client.query("SELECT * FROM users WHERE phone = $1", [String(receiverPhone).trim()]);
     const receiver = mapUser(receiverResult.rows[0]);
     if (!receiver) return res.status(404).json({ message: "Receiver not found" });
 
-    if (req.pendingAdminApproval) {
-      const transResult = await client.query(
-        "INSERT INTO transactions (sender_id, receiver_id, amount, type, status, flag_reason) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-        [sender.id, receiver.id, transferAmount, "transfer", "Pending Admin Approval", req.pendingReason || "Pending review"]
-      );
-      const transaction = mapTransaction(transResult.rows[0]);
-
-      await createUserLog({
-        user: sender.id,
-        action: "transfer_pending_approval",
-        metadata: { receiverPhone, amount: transferAmount, status: "Pending Admin Approval" },
-        req
-      });
-
-      return res.status(202).json({ message: "Transaction marked as Pending Admin Approval", transaction });
+    if (sender.id === receiver.id) {
+      return res.status(400).json({ message: "Cannot transfer to yourself" });
     }
 
-    if (sender.balance < transferAmount) return res.status(400).json({ message: "Insufficient balance" });
+    if (sender.balance < transferAmount) {
+      return res.status(400).json({ message: "Insufficient balance" });
+    }
 
     await client.query("BEGIN");
 
-    await client.query("UPDATE users SET balance = balance - $1 WHERE id = $2", [transferAmount, sender.id]);
-    await client.query("UPDATE users SET balance = balance + $1 WHERE id = $2", [transferAmount, receiver.id]);
-
-    let status = "completed";
-    let flagReason = "";
-    if (isHugeTransfer(transferAmount)) {
-      status = "flagged";
-      flagReason = "Transfer amount exceeded huge transfer threshold";
-      await client.query("UPDATE users SET status_flag = 'flagged' WHERE id = $1", [sender.id]);
-      await createSecurityEvent({
-        user: sender.id,
-        type: "huge_transfer",
-        details: `Huge transfer detected: ${transferAmount}`,
-        severity: "high"
-      });
-    }
-
-    const transResult = await client.query(
-      "INSERT INTO transactions (sender_id, receiver_id, amount, type, status, flag_reason) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-      [sender.id, receiver.id, transferAmount, "transfer", status, flagReason]
+    // Deduct from sender
+    const updatedSender = await client.query(
+      "UPDATE users SET balance = COALESCE(balance, 0) - $1 WHERE id = $2 RETURNING balance",
+      [transferAmount, sender.id]
     );
-    const transaction = mapTransaction(transResult.rows[0]);
+    const newBalance = parseFloat(updatedSender.rows[0].balance);
+
+    // Add to receiver
+    await client.query(
+      "UPDATE users SET balance = COALESCE(balance, 0) + $1 WHERE id = $2",
+      [transferAmount, receiver.id]
+    );
+
+    // Create transaction - marked as DEBIT for sender
+    const txRes = await client.query(
+      "INSERT INTO transactions (sender_id, receiver_id, amount, type, category, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *",
+      [sender.id, receiver.id, transferAmount, "debit", "transfer", "completed"]
+    );
+    const transaction = mapTransaction(txRes.rows[0]);
 
     await client.query("COMMIT");
 
     await createUserLog({
       user: sender.id,
-      action: "transfer",
-      metadata: { receiverPhone, amount: transferAmount, status },
+      action: "transfer_sent",
+      metadata: { amount: transferAmount, receiver: receiver.id, status: "completed" },
       req
     });
 
-    return res.status(201).json({ message: "Transfer successful", transaction });
+    return res.status(201).json({ message: "Transfer successful", transaction, newBalance });
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (client) await client.query("ROLLBACK");
     return res.status(500).json({ message: error.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 };
 
@@ -112,147 +119,121 @@ export const creditFunds = async (req, res) => {
   try {
     const { amount, pin } = req.body;
     const creditAmount = Number(amount);
-    if (!creditAmount || creditAmount <= 0) {
-      return res.status(400).json({ message: "Invalid credit amount" });
-    }
 
-    if (!/^\d{4}$/.test(String(pin || ""))) {
-      return res.status(400).json({ message: "PIN is required" });
-    }
+    if (creditAmount <= 0) return res.status(400).json({ message: "Invalid amount" });
 
     const userResult = await client.query("SELECT * FROM users WHERE id = $1", [req.user.id]);
     const user = mapUser(userResult.rows[0]);
-    if (!user?.pinHash) {
-      return res.status(400).json({ message: "PIN not set for this account" });
-    }
 
-    const pinOk = await bcrypt.compare(String(pin), user.pinHash);
-    if (!pinOk) {
-      return res.status(403).json({ message: "Invalid PIN" });
-    }
+    const pinOk = await bcrypt.compare(String(pin).trim(), user.pinHash);
+    if (!pinOk) return res.status(403).json({ message: "Invalid Security PIN" });
 
     await client.query("BEGIN");
-    await client.query("UPDATE users SET balance = balance + $1 WHERE id = $2", [creditAmount, user.id]);
 
-    const transResult = await client.query(
-      "INSERT INTO transactions (receiver_id, amount, type, status) VALUES ($1, $2, $3, $4) RETURNING *",
-      [user.id, creditAmount, "credit", "completed"]
+    const updatedUser = await client.query(
+      "UPDATE users SET balance = COALESCE(balance, 0) + $1 WHERE id = $2 RETURNING balance",
+      [creditAmount, user.id]
     );
-    const transaction = mapTransaction(transResult.rows[0]);
+    const newBalance = parseFloat(updatedUser.rows[0].balance);
+
+    // Create transaction - marked as CREDIT
+    const txRes = await client.query(
+      "INSERT INTO transactions (sender_id, amount, type, category, status, created_at) VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING *",
+      [user.id, creditAmount, "credit", "credit", "completed"]
+    );
+    const transaction = mapTransaction(txRes.rows[0]);
+
     await client.query("COMMIT");
 
     await createUserLog({
       user: user.id,
-      action: "credit",
-      metadata: { amount: creditAmount },
+      action: "credit_funds",
+      metadata: { amount: creditAmount, status: "completed" },
       req
     });
 
-    return res.status(201).json({ message: "Credit successful", transaction });
+    return res.status(201).json({ message: "Funds credited", transaction, newBalance });
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (client) await client.query("ROLLBACK");
     return res.status(500).json({ message: error.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 };
 
 export const getHistory = async (req, res) => {
   try {
-    const userId = req.user.id;
     const result = await query(
-      `SELECT t.*, 
-              s.email as sender_email, s.full_name as sender_name, s.bank_name as sender_bank,
-              r.email as receiver_email, r.full_name as receiver_name, r.bank_name as receiver_bank
-       FROM transactions t
-       LEFT JOIN users s ON t.sender_id = s.id
-       LEFT JOIN users r ON t.receiver_id = r.id
-       WHERE t.sender_id = $1 OR t.receiver_id = $1
-       ORDER BY t.created_at DESC LIMIT 200`,
-      [userId]
+      "SELECT * FROM transactions WHERE sender_id = $1 OR receiver_id = $1 ORDER BY created_at DESC",
+      [req.user.id]
     );
-
-    const transactions = result.rows.map(t => ({
-      ...mapTransaction(t),
-      sender: t.sender_id ? { _id: t.sender_id, id: t.sender_id, email: t.sender_email, fullName: t.sender_name, bankName: t.sender_bank } : null,
-      receiver: t.receiver_id ? { _id: t.receiver_id, id: t.receiver_id, email: t.receiver_email, fullName: t.receiver_name, bankName: t.receiver_bank } : null
-    }));
-
-
+    const transactions = result.rows.map(mapTransaction);
     return res.json({ transactions });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
 };
 
-const validateLoanRules = (amount, months) => {
-  if (!amount || amount <= 0) return "Invalid loan amount";
-  if (amount < 50000) {
-    if (![3, 6].includes(months)) return "Months must be 3 or 6 for loans below 50,000";
-    return null;
-  }
-  if (amount >= 50000 && amount < 2000000) {
-    if (![12, 36].includes(months)) return "Months must be 12 or 36 for this loan amount";
-    return null;
-  }
-  return "Loan amount must be less than 2,000,000";
-};
-
 export const previewLoan = async (req, res) => {
   try {
     const { amount, months } = req.body;
-    const loanAmount = Number(amount);
-    const loanMonths = Number(months);
-    const error = validateLoanRules(loanAmount, loanMonths);
-    if (error) return res.status(400).json({ message: error });
+    const loanAmount = parseFloat(amount);
+    const duration = parseInt(months);
 
-    const monthlyPayment = Number((loanAmount / loanMonths).toFixed(2));
-    return res.json({ amount: loanAmount, months: loanMonths, monthlyPayment });
+    const interestRate = 0.1;
+    const totalAmount = loanAmount * (1 + interestRate);
+    const monthlyPayment = totalAmount / duration;
+
+    return res.json({
+      amount: loanAmount,
+      months: duration,
+      monthlyPayment,
+      totalAmount
+    });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
 };
 
 export const confirmLoan = async (req, res) => {
+  const client = await getClient();
   try {
-    const { amount, months, pin } = req.body;
-    const loanAmount = Number(amount);
-    const loanMonths = Number(months);
-    const error = validateLoanRules(loanAmount, loanMonths);
-    if (error) return res.status(400).json({ message: error });
+    const { amount, months, monthlyPayment, loanType } = req.body;
+    await client.query("BEGIN");
 
-    if (!/^\d{4}$/.test(String(pin || ""))) {
-      return res.status(400).json({ message: "PIN is required" });
-    }
-
-    const userResult = await query("SELECT * FROM users WHERE id = $1", [req.user.id]);
-    const user = mapUser(userResult.rows[0]);
-    if (!user?.pinHash) {
-      return res.status(400).json({ message: "PIN not set for this account" });
-    }
-
-    const pinOk = await bcrypt.compare(String(pin), user.pinHash);
-    if (!pinOk) {
-      return res.status(403).json({ message: "Invalid PIN" });
-    }
-
-    const monthlyPayment = Number((loanAmount / loanMonths).toFixed(2));
-    const result = await query(
-      "INSERT INTO loans (user_id, amount, months, monthly_payment, status) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-      [user.id, loanAmount, loanMonths, monthlyPayment, "pending"]
+    const loanRes = await client.query(
+      "INSERT INTO loans (user_id, amount, months, monthly_payment, loan_type, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *",
+      [req.user.id, amount, months, monthlyPayment, loanType || 'Personal', "active"]
     );
-    const loan = mapLoan(result.rows[0]);
+
+    // Credit initial loan amount to user
+    const updatedUser = await client.query(
+      "UPDATE users SET balance = COALESCE(balance, 0) + $1 WHERE id = $2 RETURNING balance",
+      [amount, req.user.id]
+    );
+    const newBalance = parseFloat(updatedUser.rows[0].balance);
+
+    // Create transaction - marked as CREDIT (loan received)
+    await client.query(
+      "INSERT INTO transactions (sender_id, amount, type, category, status, created_at) VALUES ($1, $2, $3, $4, $5, NOW())",
+      [req.user.id, amount, "credit", `loan_${loanType || 'payout'}`, "completed"]
+    );
+
+    await client.query("COMMIT");
 
     await createUserLog({
-      user: user.id,
-      action: "loan_applied",
-      metadata: { amount: loanAmount, months: loanMonths, monthlyPayment },
+      user: req.user.id,
+      action: "loan_confirmed",
+      metadata: { amount, months, status: "active" },
       req
     });
 
-    return res.status(201).json({ message: "Loan आवेदन received", loan });
+    return res.status(201).json({ message: "Loan confirmed", loan: mapLoan(loanRes.rows[0]), newBalance });
   } catch (error) {
+    if (client) await client.query("ROLLBACK");
     return res.status(500).json({ message: error.message });
+  } finally {
+    if (client) client.release();
   }
 };
 
@@ -260,7 +241,6 @@ export const getVirtualCard = async (req, res) => {
   try {
     const result = await query("SELECT * FROM virtual_cards WHERE user_id = $1", [req.user.id]);
     const card = mapVirtualCard(result.rows[0]);
-    if (!card) return res.status(404).json({ message: "No virtual card found" });
     return res.json({ card });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -269,25 +249,16 @@ export const getVirtualCard = async (req, res) => {
 
 export const generateVirtualCard = async (req, res) => {
   try {
-    const existingResult = await query("SELECT id FROM virtual_cards WHERE user_id = $1", [req.user.id]);
-    if (existingResult.rows.length > 0) return res.status(400).json({ message: "Card already exists" });
-
-    let cardNumber = "";
-    for (let i = 0; i < 16; i++) {
-      cardNumber += Math.floor(Math.random() * 10).toString();
-    }
+    const cardNumber = "4242" + Math.random().toString().slice(2, 14);
     const cvv = Math.floor(100 + Math.random() * 900).toString();
-    const year = new Date().getFullYear() + 4;
-    const month = String(new Date().getMonth() + 1).padStart(2, "0");
-    const expiry = `${month}/${String(year).slice(-2)}`;
+    const expiry = "12/28";
 
     const result = await query(
-      "INSERT INTO virtual_cards (user_id, card_number, cvv, expiry, status) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-      [req.user.id, cardNumber, cvv, expiry, "active"]
+      "INSERT INTO virtual_cards (user_id, card_number, cvv, expiry, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING *",
+      [req.user.id, cardNumber, cvv, expiry]
     );
     const card = mapVirtualCard(result.rows[0]);
-
-    return res.status(201).json({ message: "Card generated", card });
+    return res.status(201).json({ card });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -295,15 +266,13 @@ export const generateVirtualCard = async (req, res) => {
 
 export const freezeVirtualCard = async (req, res) => {
   try {
-    const result = await query("SELECT * FROM virtual_cards WHERE user_id = $1", [req.user.id]);
+    const { status } = req.body;
+    const result = await query(
+      "UPDATE virtual_cards SET status = $1 WHERE user_id = $2 RETURNING *",
+      [status, req.user.id]
+    );
     const card = mapVirtualCard(result.rows[0]);
-    if (!card) return res.status(404).json({ message: "No virtual card found" });
-
-    const newStatus = card.status === "frozen" ? "active" : "frozen";
-    const updateResult = await query("UPDATE virtual_cards SET status = $1 WHERE user_id = $2 RETURNING *", [newStatus, req.user.id]);
-    const updatedCard = mapVirtualCard(updateResult.rows[0]);
-
-    return res.json({ message: `Card ${updatedCard.status}`, card: updatedCard });
+    return res.json({ card });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -312,7 +281,7 @@ export const freezeVirtualCard = async (req, res) => {
 export const deleteVirtualCard = async (req, res) => {
   try {
     await query("DELETE FROM virtual_cards WHERE user_id = $1", [req.user.id]);
-    return res.json({ message: "Card deleted successfully" });
+    return res.json({ message: "Card deleted" });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -321,60 +290,131 @@ export const deleteVirtualCard = async (req, res) => {
 export const processCardTransaction = async (req, res) => {
   const client = await getClient();
   try {
-    const { cardNumber, cvv, expiry, amount, merchantName } = req.body;
-    const purchaseAmount = Number(amount);
-    
-    if (!purchaseAmount || purchaseAmount <= 0) {
-      return res.status(400).json({ message: "Invalid amount" });
-    }
+    const { cardNumber, cvv, amount, merchantName } = req.body;
+    const txAmount = Number(amount);
 
-    const cardResult = await client.query(
-      "SELECT * FROM virtual_cards WHERE card_number = $1 AND cvv = $2 AND expiry = $3",
-      [cardNumber, cvv, expiry]
-    );
-    const card = mapVirtualCard(cardResult.rows[0]);
-    
-    if (!card) return res.status(400).json({ message: "Invalid card details" });
-    if (card.status === "frozen") return res.status(400).json({ message: "Card is frozen" });
+    const cardRes = await client.query("SELECT * FROM virtual_cards WHERE card_number = $1 AND cvv = $2", [cardNumber, cvv]);
+    const card = mapVirtualCard(cardRes.rows[0]);
 
-    const userResult = await client.query("SELECT * FROM users WHERE id = $1", [card.userId]);
-    const user = mapUser(userResult.rows[0]);
-    if (!user) return res.status(404).json({ message: "Linked user not found" });
+    if (!card || card.status !== "active") return res.status(400).json({ message: "Invalid or inactive card" });
 
-    if (user.balance < purchaseAmount) {
-      return res.status(400).json({ message: "Insufficient balance" });
-    }
+    const userRes = await client.query("SELECT * FROM users WHERE id = $1", [card.userId]);
+    const user = mapUser(userRes.rows[0]);
 
-    let status = "completed";
-    let flagReason = "";
-    
-    const currentHour = new Date().getHours();
-    const isUnusualTime = currentHour >= 1 && currentHour <= 5;
-    const isLargeAmount = purchaseAmount > 50000;
+    if (user.balance < txAmount) return res.status(400).json({ message: "Insufficient balance" });
 
     await client.query("BEGIN");
 
-    if (isLargeAmount || isUnusualTime) {
-      status = "flagged";
-      flagReason = isLargeAmount ? "Amount exceeds 50000 limit" : "Unusual transaction time";
-      await client.query("UPDATE users SET status_flag = 'flagged' WHERE id = $1", [user.id]);
-    }
-
-    await client.query("UPDATE users SET balance = balance - $1 WHERE id = $2", [purchaseAmount, user.id]);
-
-    const transResult = await client.query(
-      "INSERT INTO transactions (sender_id, amount, type, source, merchant_name, status, flag_reason) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
-      [user.id, purchaseAmount, "purchase", "virtual_card", merchantName || "Online Purchase", status, flagReason]
+    const updatedUser = await client.query(
+      "UPDATE users SET balance = COALESCE(balance, 0) - $1 WHERE id = $2 RETURNING balance",
+      [txAmount, user.id]
     );
-    const transaction = mapTransaction(transResult.rows[0]);
+    const newBalance = parseFloat(updatedUser.rows[0].balance);
+
+    // Create transaction - marked as DEBIT
+    const txRes = await client.query(
+      "INSERT INTO transactions (sender_id, amount, type, category, source, merchant_name, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING *",
+      [user.id, txAmount, "debit", "card_payment", "virtual_card", merchantName, "completed"]
+    );
+    const transaction = mapTransaction(txRes.rows[0]);
 
     await client.query("COMMIT");
 
-    return res.status(201).json({ message: "Transaction successful", transaction });
+    return res.status(201).json({ message: "Transaction successful", transaction, newBalance });
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (client) await client.query("ROLLBACK");
     return res.status(500).json({ message: error.message });
   } finally {
-    client.release();
+    if (client) client.release();
+  }
+};
+
+export const getLoans = async (req, res) => {
+  try {
+    const result = await query("SELECT * FROM loans WHERE user_id = $1 ORDER BY created_at DESC", [req.user.id]);
+    const loans = result.rows.map(mapLoan);
+    return res.json({ loans });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const processBillPayment = async (req, res) => {
+  const client = await getClient();
+  try {
+    const { type, cardNumber, cvv, pin, amount, merchantName, loanId } = req.body;
+    const paymentAmount = Number(amount);
+    
+    if (!paymentAmount || paymentAmount <= 0) {
+      return res.status(400).json({ message: "Invalid amount" });
+    }
+
+    if (!type) return res.status(400).json({ message: "Payment type is required" });
+
+    // 1. Verify Card
+    const cardResult = await client.query(
+      "SELECT * FROM virtual_cards WHERE card_number = $1 AND cvv = $2",
+      [String(cardNumber).trim(), String(cvv).trim()]
+    );
+    const card = mapVirtualCard(cardResult.rows[0]);
+    if (!card) return res.status(400).json({ message: "Invalid card details" });
+    if (card.status === "frozen") return res.status(400).json({ message: "Card is frozen" });
+
+    // 2. Verify User & PIN
+    const userResult = await client.query("SELECT * FROM users WHERE id = $1", [req.user.id]);
+    const user = mapUser(userResult.rows[0]);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (card.userId !== user.id) {
+      return res.status(403).json({ message: "This card does not belong to you" });
+    }
+
+    const pinOk = await bcrypt.compare(String(pin).trim(), user.pinHash);
+    if (!pinOk) return res.status(403).json({ message: "Invalid Security PIN" });
+
+    // 3. Check Balance
+    if (user.balance < paymentAmount) {
+      return res.status(400).json({ message: "Insufficient balance" });
+    }
+
+    await client.query("BEGIN");
+
+    // 4. If Loan Payment, update loan status
+    if (type === 'loan' && loanId) {
+      const loanResult = await client.query("SELECT * FROM loans WHERE id = $1 AND user_id = $2", [loanId, user.id]);
+      if (loanResult.rows.length === 0) {
+        throw new Error("Loan not found");
+      }
+      await client.query("UPDATE loans SET status = 'paid' WHERE id = $1", [loanId]);
+    }
+
+    // 5. Deduct Balance
+    const updatedUser = await client.query("UPDATE users SET balance = COALESCE(balance, 0) - $1 WHERE id = $2 RETURNING balance", [paymentAmount, user.id]);
+    const newBalance = parseFloat(updatedUser.rows[0].balance);
+
+    // 6. Create Transaction - marked as DEBIT
+    const txRes = await client.query(
+      "INSERT INTO transactions (sender_id, amount, type, category, source, merchant_name, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING *",
+      [user.id, paymentAmount, "debit", type, "virtual_card", merchantName || `Bill Payment: ${type}`, "completed"]
+    );
+    const transaction = mapTransaction(txRes.rows[0]);
+
+    await client.query("COMMIT");
+
+    // 7. Log for Admin Dashboard
+    await createUserLog({
+      user: user.id,
+      action: `payment_${type}`,
+      metadata: { amount: paymentAmount, type, status: "completed", loanId },
+      req
+    });
+
+    return res.status(201).json({ message: `${type.toUpperCase()} Payment successful`, transaction, newBalance });
+
+  } catch (error) {
+    if (client) await client.query("ROLLBACK");
+    return res.status(500).json({ message: error.message });
+  } finally {
+    if (client) client.release();
   }
 };

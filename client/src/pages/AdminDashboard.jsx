@@ -1,554 +1,723 @@
-import { useEffect, useMemo, useState } from "react";
-import { io } from "socket.io-client";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { api } from "../api/client.js";
-import { useAuth } from "../context/AuthContext.jsx";
 import { 
-  Building2, Users, ShieldAlert, Search, Download, LogOut, 
-  Trash2, Ban, ArrowLeft, Activity, AlertTriangle, CheckCircle2, 
-  ChevronRight, LayoutDashboard, Database
+  Users, Landmark, ShieldAlert, Activity, 
+  Trash2, ShieldOff, Search, RefreshCw, 
+  Sun, Moon, ShieldCheck, AlertTriangle, 
+  Trash, X, Key, Info, History, Shield,
+  ArrowRight, CheckCircle2, UserX, Loader2,
+  ArrowLeft, FileText, User, Clock, Download,
+  ExternalLink, CreditCard, Receipt, ShieldQuestion
 } from "lucide-react";
 
-const socket = io(import.meta.env.VITE_SOCKET_URL || "http://localhost:5000");
-
 export default function AdminDashboard() {
-  const [banks, setBanks] = useState([]);
-  const [selectedBank, setSelectedBank] = useState("");
-  const [view, setView] = useState("home"); // home, banks, users
+  // Theme State
+  const [isDark, setIsDark] = useState(() => localStorage.getItem('adminTheme') === 'dark');
+  
+  // Data State
+  const [stats, setStats] = useState({ totalUsers: 0, activeBanks: 0, flaggedUsers: 0, totalLogs: 0 });
   const [users, setUsers] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [securityEvents, setSecurityEvents] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [message, setMessage] = useState("");
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return { date: "N/A", time: "N/A" };
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return { date: "Invalid", time: "Invalid" };
+    return {
+      date: date.toLocaleDateString(),
+      time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+  };
+
+  // Filtering State
+  const [selectedBank, setSelectedBank] = useState(null);
+
+  // Full Logs State
+  const [showFullLogs, setShowFullLogs] = useState(false);
+  const [allLogs, setAllLogs] = useState([]);
+  const [isLogsLoading, setIsLogsLoading] = useState(false);
+
+  // User Detail State
   const [selectedUser, setSelectedUser] = useState(null);
-  const [history, setHistory] = useState(null);
-  const [liveEvents, setLiveEvents] = useState([]);
-  const [showLogs, setShowLogs] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [failedOnly, setFailedOnly] = useState(false);
-  const { logout } = useAuth();
+  const [userDetailHistory, setUserDetailHistory] = useState(null);
+  const [isUserLoading, setIsUserLoading] = useState(false);
 
-  const loadBanks = async () => {
-    const { data } = await api.get("/admin/users");
-    const uniqueBanks = Array.from(new Set(data.map((u) => u.bankName).filter(Boolean))).sort();
-    setBanks(uniqueBanks);
-  };
-
-  const loadUsers = async () => {
-    const { data } = await api.get(`/admin/users${selectedBank ? `?bankName=${selectedBank}` : ""}`);
-    setUsers(data);
-  };
-
-  const loadSecurityFeed = async () => {
-    const { data } = await api.get("/admin/security-feed");
-    const combined = [...data.events, ...data.logs]
-      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
-      .slice(0, 100);
-    setLiveEvents(combined);
-  };
+  // Modal States
+  const [showClearLogsModal, setShowClearLogsModal] = useState(false);
+  const [adminPin, setAdminPin] = useState("");
+  const [isDeletingLogs, setIsDeletingLogs] = useState(false);
 
   useEffect(() => {
-    loadBanks();
-    loadSecurityFeed();
-  }, []);
-
-  useEffect(() => {
-    if (view === "users" && selectedBank) {
-      loadUsers();
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('adminTheme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('adminTheme', 'light');
     }
-  }, [view, selectedBank]);
+  }, [isDark]);
 
-  useEffect(() => {
-    const mergeLatest = (entry) => {
-      setLiveEvents((prev) =>
-        [entry, ...prev]
-          .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
-          .slice(0, 100)
-      );
-    };
-    socket.on("security:event", mergeLatest);
-    socket.on("user:log", mergeLatest);
-    return () => {
-      socket.off("security:event");
-      socket.off("user:log");
-    };
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [statsRes, usersRes, feedRes] = await Promise.all([
+        api.get("/admin/stats"),
+        api.get("/admin/users"),
+        api.get("/admin/security-feed")
+      ]);
+      setStats(statsRes.data);
+      setUsers(usersRes.data);
+      setLogs(feedRes.data.logs);
+      setSecurityEvents(feedRes.data.events);
+    } catch (e) {
+      console.error("Fetch failed", e);
+      setMessage("Failed to load dashboard data");
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  const inspectUser = async (id) => {
-    const { data } = await api.get(`/admin/users/${id}/history`);
-    setSelectedUser(data.user);
-    setHistory(data);
+  const fetchFullLogs = async () => {
+    setIsLogsLoading(true);
+    try {
+      const { data } = await api.get("/admin/logs");
+      setAllLogs(data);
+    } catch (e) {
+      setMessage("Failed to fetch full logs");
+    } finally {
+      setIsLogsLoading(false);
+    }
   };
 
-  const refreshUsers = async () => {
-    const { data } = await api.get(`/admin/users${selectedBank ? `?bankName=${selectedBank}` : ""}`);
-    setUsers(data);
+  const fetchUserDetails = async (userId) => {
+    console.log(`[Admin] Initiating fetch for user ID: ${userId}`);
+    setIsUserLoading(true);
+    try {
+      const { data } = await api.get(`/admin/users/${userId}/history`);
+      console.log("[Admin] Successfully received user history packet:", data);
+      setUserDetailHistory(data);
+    } catch (e) {
+      console.error("[Admin] History fetch failed:", e);
+      setMessage("Failed to fetch user history");
+    } finally {
+      setIsUserLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (showFullLogs) fetchFullLogs();
+  }, [showFullLogs]);
+
+  useEffect(() => {
+    if (selectedUser) fetchUserDetails(selectedUser.id);
+  }, [selectedUser]);
+
+  const handleClearLogs = async (e) => {
+    e.preventDefault();
+    setIsDeletingLogs(true);
+    try {
+      await api.post("/admin/logs/clear", { pin: adminPin });
+      setMessage("System audit trail wiped successfully");
+      setShowClearLogsModal(false);
+      setAdminPin("");
+      
+      // Immediate UI refresh
+      fetchData();
+      if (showFullLogs) fetchFullLogs();
+      
+      console.log("[Admin] Logs cleared. Polling for new system events...");
+    } catch (err) {
+      setMessage(err.response?.data?.message || "Verification failed");
+      console.error("[Admin] Log wipe failed:", err);
+    } finally {
+      setIsDeletingLogs(false);
+    }
   };
 
   const handleBlockUser = async (userId) => {
-    await api.patch(`/admin/users/${userId}/block`);
-    await refreshUsers();
-    if (selectedUser?._id === userId) {
-      await inspectUser(userId);
+    try {
+      await api.patch(`/admin/users/${userId}/block`);
+      setMessage("User access suspended");
+      fetchData();
+    } catch (e) {
+      setMessage("Block action failed");
     }
   };
 
   const handleDeleteUser = async (userId) => {
-    if(!confirm("Are you sure you want to delete this user?")) return;
-    await api.delete(`/admin/users/${userId}`);
-    setSelectedUser(null);
-    setHistory(null);
-    await refreshUsers();
-    await loadBanks();
-  };
-
-  const handleDeleteBank = async () => {
-    if (!selectedBank) return;
-    if(!confirm(`Are you sure you want to delete all users in ${selectedBank}?`)) return;
-    await api.delete(`/admin/banks/${encodeURIComponent(selectedBank)}`);
-    setSelectedBank("");
-    setUsers([]);
-    setSelectedUser(null);
-    setHistory(null);
-    setView("banks");
-    await loadBanks();
-  };
-
-  const formatTime = (item) => {
-    if (!item) return "-";
-    const source = item.createdAt || item.created_at || item.timestamp || item.updatedAt || item.updated_at;
-    if (!source) return "-";
+    if (!window.confirm("Are you sure? This will delete all user data permanently.")) return;
     try {
-      const date = new Date(source);
-      if (isNaN(date.getTime())) return "-";
-      return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+      await api.delete(`/admin/users/${userId}`);
+      setMessage("User account deleted");
+      fetchData();
     } catch (e) {
-      return "-";
+      setMessage("Delete action failed");
     }
   };
 
-  const formatDate = (item) => {
-    if (!item) return "-";
-    const source = item.createdAt || item.created_at || item.timestamp || item.updatedAt || item.updated_at;
-    if (!source) return "-";
+  const handleDeleteBank = async (bankName) => {
+    if (!window.confirm(`Delete bank ${bankName} and all its users?`)) return;
     try {
-      const date = new Date(source);
-      if (isNaN(date.getTime())) return "-";
-      return date.toLocaleDateString("en-GB");
+      await api.delete(`/admin/banks/${bankName}`);
+      setMessage("Bank and associated accounts removed");
+      fetchData();
     } catch (e) {
-      return "-";
+      setMessage("Bank deletion failed");
     }
   };
 
-
-
-  const getRowAction = (item) => item.action || item.type || "-";
-  const getRowEmail = (item) => item.user?.email || item.metadata?.email || "-";
-  
-  const filteredLogs = useMemo(() => {
-    return liveEvents.filter((item) => {
-      const action = getRowAction(item).toLowerCase();
-      const email = getRowEmail(item).toLowerCase();
-      const matchesSearch = searchQuery
-        ? email.includes(searchQuery.toLowerCase()) || action.includes(searchQuery.toLowerCase())
-        : true;
-      const matchesFailed = failedOnly ? action.includes("failed") : true;
-      return matchesSearch && matchesFailed;
+  const filteredUsers = useMemo(() => {
+    return users.filter(u => {
+      const matchesSearch = 
+        u.fullName?.toLowerCase().includes(search.toLowerCase()) ||
+        u.email?.toLowerCase().includes(search.toLowerCase()) ||
+        u.bankName?.toLowerCase().includes(search.toLowerCase());
+      
+      const matchesBank = !selectedBank || u.bankName === selectedBank;
+      
+      return matchesSearch && matchesBank;
     });
-  }, [liveEvents, searchQuery, failedOnly]);
+  }, [users, search, selectedBank]);
 
-  const exportLogsCsv = () => {
-    const header = ["Status/Action", "Email", "Date", "Time"];
-    const rows = filteredLogs.map((item) => [
-      getRowAction(item),
-      getRowEmail(item),
-      formatDate(item),
-      formatTime(item)
-    ]);
+  const filteredAllLogs = allLogs.filter(l => 
+    l.action?.toLowerCase().includes(search.toLowerCase()) ||
+    l.userEmail?.toLowerCase().includes(search.toLowerCase()) ||
+    l.ip?.includes(search)
+  );
 
-    const csvText = [header, ...rows]
-      .map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(","))
-      .join("\n");
-
-    const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `security-logs-${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleBlockFromLogs = async (userId) => {
-    if (!userId) return;
-    await api.patch(`/admin/users/${userId}/block`);
-    await loadSecurityFeed();
-    if (view === "users" && selectedBank) {
-      await refreshUsers();
-    }
-  };
-
-  const selectBank = (bank) => {
-    setSelectedBank(bank);
-    setSelectedUser(null);
-    setHistory(null);
-    setView("users");
-    setShowLogs(false);
-  };
-
-  const StatusBadge = ({ action, isBlocked }) => {
-    const act = action.toLowerCase();
-    if (isBlocked || act.includes("failed") || act.includes("error")) {
-      return (
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800/50">
-          <AlertTriangle className="w-3 h-3 mr-1" /> Failed / Blocked
-        </span>
-      );
-    }
-    if (act.includes("success") || act.includes("completed")) {
-      return (
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-800/50">
-          <CheckCircle2 className="w-3 h-3 mr-1" /> Success
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50">
-        <Activity className="w-3 h-3 mr-1" /> {action}
-      </span>
-    );
-  };
+  const StatCard = ({ icon: Icon, label, value, color, delay }) => (
+    <div className={`bg-white dark:bg-zinc-900 p-4 rounded-3xl border border-slate-100 dark:border-zinc-800 shadow-sm group hover:shadow-md transition-all animate-in fade-in slide-in-from-bottom-4 duration-500 delay-${delay}`}>
+      <div className="flex items-center gap-4">
+        <div className={`p-3 rounded-2xl ${color} bg-opacity-10 shrink-0`}>
+          <Icon className={`w-5 h-5 ${color.replace('bg-', 'text-')}`} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest truncate">{label}</p>
+          <h4 className="text-xl font-black text-slate-900 dark:text-white truncate">{value.toLocaleString()}</h4>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-900 text-gray-900 dark:text-white font-sans transition-colors duration-300">
-      
-      {/* Sticky Top Navbar */}
-      <nav className="sticky top-0 z-50 w-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-gray-200 dark:border-zinc-800 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            <div className="flex items-center gap-2">
-              <ShieldAlert className="h-8 w-8 text-blue-600 dark:text-blue-500" />
-              <span className="text-xl font-extrabold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
-                SOC Admin Panel
-              </span>
+    <div className="h-screen bg-slate-50 dark:bg-black text-slate-800 dark:text-zinc-200 transition-colors duration-500 flex flex-col overflow-hidden">
+      {/* Top Navbar - Fixed */}
+      <nav className="shrink-0 bg-white/80 dark:bg-black/80 backdrop-blur-2xl border-b border-slate-200 dark:border-zinc-800 px-8 py-4">
+        <div className="max-w-[1800px] mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            {showFullLogs && (
+              <button 
+                onClick={() => setShowFullLogs(false)}
+                className="p-2.5 hover:bg-slate-100 dark:hover:bg-zinc-900 rounded-xl transition-all"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+              <Shield className="w-6 h-6" />
             </div>
-            <div className="flex items-center gap-4">
-              <button 
-                onClick={() => { setShowLogs(false); setView("home"); }}
-                className={`flex items-center px-3 py-2 rounded-xl text-sm font-semibold transition-all ${!showLogs && view === "home" ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-zinc-800'}`}
-              >
-                <LayoutDashboard className="w-4 h-4 mr-2" /> Dashboard
-              </button>
-              <button 
-                onClick={() => { setShowLogs(true); setView("logs"); }}
-                className={`flex items-center px-3 py-2 rounded-xl text-sm font-semibold transition-all ${showLogs ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-zinc-800'}`}
-              >
-                <Activity className="w-4 h-4 mr-2" /> Live Logs
-                <span className="ml-2 bg-indigo-600 text-white text-[10px] px-2 py-0.5 rounded-full animate-pulse">Live</span>
-              </button>
-              <div className="w-px h-6 bg-gray-300 dark:bg-zinc-700 mx-2"></div>
-              <button 
-                onClick={logout}
-                className="flex items-center px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 rounded-xl transition-all"
-              >
-                <LogOut className="w-4 h-4 mr-2" /> Logout
-              </button>
+            <div>
+              <h1 className="text-xl font-black tracking-tight text-slate-900 dark:text-white">Admin Central</h1>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Global Banking Control</p>
             </div>
+          </div>
+
+          <div className="flex items-center gap-6">
+            <div className="relative hidden md:block">
+              <input 
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search globally..."
+                className="px-6 py-2.5 bg-slate-100 dark:bg-zinc-900 border-none rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-80 transition-all"
+              />
+            </div>
+            
+            <button 
+              onClick={() => setIsDark(!isDark)}
+              className="p-3 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all active:scale-95"
+            >
+              {isDark ? <Sun className="w-5 h-5 text-amber-500" /> : <Moon className="w-5 h-5 text-indigo-600" />}
+            </button>
+            
+            <button 
+              onClick={() => showFullLogs ? fetchFullLogs() : fetchData()}
+              className="p-3 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-500/20 hover:bg-indigo-700 transition-all active:scale-95"
+            >
+              <RefreshCw className={`w-5 h-5 ${(isLoading || isLogsLoading) ? 'animate-spin' : ''}`} />
+            </button>
           </div>
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        {/* Live Logs View */}
-        {showLogs ? (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-200 dark:border-zinc-700/50 overflow-hidden">
-              
-              <div className="p-6 border-b border-gray-200 dark:border-zinc-700/50 bg-gradient-to-r from-gray-50 to-white dark:from-zinc-800/50 dark:to-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-xl font-bold flex items-center gap-2">
-                    <ShieldAlert className="w-6 h-6 text-indigo-500" /> Security Feed
-                  </h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Real-time monitoring of user activity and system events.</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search email or action..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-9 pr-4 py-2 bg-gray-100 dark:bg-zinc-900 border-none rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-64"
-                    />
+      <main className="flex-1 max-w-[1800px] mx-auto w-full p-8 flex flex-col gap-8 min-h-0">
+        {message && (
+          <div className="fixed top-24 right-8 z-50 px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black shadow-2xl animate-in slide-in-from-right-10">
+            {message}
+          </div>
+        )}
+
+        {/* Analytics Grid - Static & Compact */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
+          <StatCard icon={Users} label="Total Users" value={stats.totalUsers} color="bg-indigo-500" delay="0" />
+          <StatCard icon={Landmark} label="Active Banks" value={stats.activeBanks} color="bg-emerald-500" delay="100" />
+          <StatCard icon={ShieldAlert} label="Flagged Accounts" value={stats.flaggedUsers} color="bg-rose-500" delay="200" />
+          <StatCard icon={Activity} label="System Logs" value={stats.totalLogs} color="bg-amber-500" delay="300" />
+        </div>
+
+        {/* Dashboard Content Grid */}
+        <div className="grid grid-cols-12 gap-6 flex-1 min-h-0">
+          {showFullLogs ? (
+            <div className="col-span-12 bg-white dark:bg-zinc-900 rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-zinc-800 overflow-hidden flex flex-col min-h-0 animate-in zoom-in-95 duration-300">
+              <div className="p-8 border-b border-slate-50 dark:border-zinc-800 flex justify-between items-center shrink-0">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-amber-500 rounded-xl text-white">
+                    <Activity className="w-6 h-6" />
                   </div>
-                  <label className="flex items-center gap-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm font-semibold cursor-pointer border border-red-100 dark:border-red-800/30 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={failedOnly}
-                      onChange={(e) => setFailedOnly(e.target.checked)}
-                      className="rounded border-red-300 text-red-600 focus:ring-red-500"
-                    />
-                    Failed Only
-                  </label>
-                  <button onClick={exportLogsCsv} className="flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all active:scale-95">
-                    <Download className="w-4 h-4 mr-2" /> Export
+                  <div>
+                    <h3 className="text-xl font-black">Comprehensive Audit Trail</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Complete history of system interactions</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <button className="flex items-center gap-2 px-6 py-2.5 bg-slate-100 dark:bg-zinc-800 rounded-xl font-bold text-xs hover:bg-slate-200 transition-all">
+                    <Download className="w-4 h-4" /> Export CSV
+                  </button>
+                  <button 
+                    onClick={() => setShowFullLogs(false)}
+                    className="px-6 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold text-xs shadow-lg hover:opacity-90 transition-all"
+                  >
+                    Close Log View
                   </button>
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase bg-gray-50/50 dark:bg-zinc-900/50 border-b border-gray-200 dark:border-zinc-700">
-                    <tr>
-                      <th className="px-6 py-4 font-semibold tracking-wider">Status / Action</th>
-                      <th className="px-6 py-4 font-semibold tracking-wider">User Email</th>
-                      <th className="px-6 py-4 font-semibold tracking-wider">Date & Time</th>
-                      <th className="px-6 py-4 font-semibold tracking-wider text-right">Actions</th>
+              <div className="flex-1 overflow-auto custom-scrollbar">
+                <table className="w-full text-left border-collapse min-w-[1000px]">
+                  <thead className="sticky top-0 bg-white dark:bg-zinc-900 z-10">
+                    <tr className="border-b border-slate-50 dark:border-zinc-800">
+                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Action Type</th>
+                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">User Email</th>
+                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Identity / Info</th>
+                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Date & Time</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-zinc-700/50">
-                    {filteredLogs.length === 0 ? (
+                  <tbody className="divide-y divide-slate-50 dark:divide-zinc-800">
+                    {isLogsLoading ? (
                       <tr>
-                        <td colSpan="4" className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
-                          <Database className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                          <p>No logs match your filter criteria.</p>
+                        <td colSpan="4" className="py-20 text-center">
+                          <Loader2 className="w-10 h-10 animate-spin text-amber-500 mx-auto mb-4" />
+                          <p className="text-slate-500 font-bold">Fetching comprehensive logs...</p>
                         </td>
                       </tr>
-                    ) : (
-                      filteredLogs.map((item, idx) => {
-                        const blockedOrFlagged = Boolean(item.user?.isBlocked || item.user?.isTemporallyFlagged);
-                        return (
-                          <tr key={item._id || idx} className="hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors group">
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <StatusBadge action={getRowAction(item)} isBlocked={blockedOrFlagged} />
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900 dark:text-gray-100">
-                              {getRowEmail(item)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-gray-500 dark:text-gray-400">
-                              {formatDate(item)} <span className="mx-1 text-gray-300 dark:text-zinc-600">|</span> {formatTime(item)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right">
-                              <button
-                                type="button"
-                                onClick={() => handleBlockFromLogs(item.user?._id)}
-                                disabled={!item.user?._id || blockedOrFlagged}
-                                className="inline-flex items-center px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                <Ban className="w-3 h-3 mr-1" /> {blockedOrFlagged ? 'Blocked' : 'Block IP/User'}
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
+                    ) : filteredAllLogs.map((log) => (
+                      <tr key={log.id} className="group hover:bg-slate-50/50 dark:hover:bg-zinc-800/30 transition-colors">
+                        <td className="px-8 py-4">
+                          <div className="flex items-center gap-4">
+                            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-600 rounded-xl">
+                              <FileText className="w-5 h-5" />
+                            </div>
+                            <p className="font-bold text-slate-800 dark:text-white capitalize">{log.action?.replace(/_/g, ' ')}</p>
+                          </div>
+                        </td>
+                        <td className="px-8 py-4 text-sm font-bold text-slate-600 dark:text-zinc-400">{log.userEmail || "System"}</td>
+                        <td className="px-8 py-4">
+                          <div className="flex flex-col text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            <span>IP: {log.ip}</span>
+                            <span className="truncate max-w-[200px]">{log.deviceType}</span>
+                          </div>
+                        </td>
+                        <td className="px-8 py-4 text-right">
+                          <div className="flex flex-col items-end">
+                            <span className="text-sm font-bold text-slate-600 dark:text-zinc-300">{formatDate(log.createdAt).date}</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{formatDate(log.createdAt).time}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             </div>
-          </div>
-        ) : view === "home" || view === "banks" || view === "users" ? (
-          
-          /* Dashboard Main View */
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            
-            {/* Banks Sidebar */}
-            <div className="lg:col-span-1 space-y-6">
-              <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-200 dark:border-zinc-700/50 p-6">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2.5 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
-                    <Building2 className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold">Manage Banks</h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Select a bank to view its users.</p>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  {banks.length === 0 ? (
-                    <div className="text-center py-8 text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-zinc-900/50 rounded-xl border border-dashed border-gray-300 dark:border-zinc-700">
-                      No active banks found.
-                    </div>
-                  ) : (
-                    banks.map((bank) => (
-                      <button
-                        key={bank}
-                        onClick={() => selectBank(bank)}
-                        className={`w-full flex items-center justify-between p-4 rounded-xl transition-all border ${
-                          selectedBank === bank 
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-md transform scale-[1.02]' 
-                            : 'bg-white dark:bg-zinc-800 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-zinc-700 hover:border-blue-300 dark:hover:border-blue-500/50 hover:bg-gray-50 dark:hover:bg-zinc-700'
-                        }`}
-                      >
-                        <span className="font-semibold truncate">{bank}</span>
-                        <ChevronRight className={`w-5 h-5 ${selectedBank === bank ? 'text-white' : 'text-gray-400'}`} />
-                      </button>
-                    ))
-                  )}
-                </div>
-
-                {selectedBank && (
-                  <button 
-                    onClick={handleDeleteBank}
-                    className="w-full mt-6 flex items-center justify-center py-3 px-4 rounded-xl text-red-600 dark:text-red-400 bg-red-50 hover:bg-red-100 dark:bg-red-900/10 dark:hover:bg-red-900/20 font-bold text-sm transition-all border border-red-100 dark:border-red-900/30"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" /> Delete '{selectedBank}'
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Main Content Area */}
-            <div className="lg:col-span-2 space-y-6">
-              
-              {!selectedBank ? (
-                <div className="bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-blue-900 dark:to-indigo-900 rounded-3xl p-8 sm:p-12 text-white shadow-2xl relative overflow-hidden h-full flex flex-col justify-center min-h-[400px]">
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-                  <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-400 opacity-20 rounded-full blur-3xl translate-y-1/2 -translate-x-1/4"></div>
-                  <div className="relative z-10 text-center sm:text-left max-w-lg">
-                    <h2 className="text-3xl sm:text-4xl font-extrabold mb-4">Welcome to the Admin Command Center</h2>
-                    <p className="text-blue-100 text-lg mb-8 leading-relaxed">
-                      Select a bank from the sidebar to inspect users, review transaction histories, or manage security alerts.
-                    </p>
-                    <div className="flex flex-wrap gap-4 justify-center sm:justify-start">
-                      <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/20 flex-1 min-w-[140px]">
-                        <div className="text-3xl font-bold mb-1">{banks.length}</div>
-                        <div className="text-blue-200 text-sm font-medium uppercase tracking-wider">Active Banks</div>
-                      </div>
-                      <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/20 flex-1 min-w-[140px]">
-                        <div className="text-3xl font-bold mb-1">{liveEvents.length}</div>
-                        <div className="text-blue-200 text-sm font-medium uppercase tracking-wider">Security Logs</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 h-full">
-                  
-                  {/* Users List */}
-                  <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-200 dark:border-zinc-700/50 flex flex-col h-[600px]">
-                    <div className="p-5 border-b border-gray-200 dark:border-zinc-700 bg-gray-50/50 dark:bg-zinc-900/50 rounded-t-2xl flex items-center justify-between">
-                      <h3 className="text-lg font-bold flex items-center gap-2">
-                        <Users className="w-5 h-5 text-indigo-500" /> Users in {selectedBank}
-                      </h3>
-                      <span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 py-1 px-3 rounded-full text-xs font-bold">
-                        {users.length} Users
+          ) : (
+            <>
+              {/* Main User & Bank Management (8 Columns) - Scrollable */}
+              <div className="col-span-12 xl:col-span-8 space-y-6 overflow-hidden flex flex-col min-h-0">
+                {/* User Directory */}
+                <div className="bg-white dark:bg-zinc-900 rounded-[2rem] shadow-sm border border-slate-100 dark:border-zinc-800 overflow-hidden flex flex-col flex-1 min-h-0">
+                  <div className="px-8 py-6 border-b border-slate-50 dark:border-zinc-800 flex justify-between items-center shrink-0">
+                    <h3 className="text-xl font-black flex items-center gap-3">
+                      <Users className="w-6 h-6 text-indigo-500" /> User Directory
+                    </h3>
+                    <div className="flex items-center gap-4">
+                      {selectedBank && (
+                        <button 
+                          onClick={() => setSelectedBank(null)}
+                          className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:underline"
+                        >
+                          Clear Filter: {selectedBank}
+                        </button>
+                      )}
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-50 dark:bg-zinc-800 px-4 py-2 rounded-full">
+                        {filteredUsers.length} Records found
                       </span>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                      {users.length === 0 ? (
-                        <p className="text-center text-sm text-gray-500 dark:text-gray-400 py-10">No users found for this bank.</p>
-                      ) : (
-                        users.map((u) => (
-                          <div 
-                            key={u._id} 
-                            onClick={() => inspectUser(u._id)}
-                            className={`p-4 rounded-xl border transition-all cursor-pointer flex flex-col gap-3 group ${
-                              selectedUser?._id === u._id 
-                                ? 'bg-indigo-50 border-indigo-300 dark:bg-indigo-900/20 dark:border-indigo-500/50 shadow-md' 
-                                : 'bg-white border-gray-200 hover:border-indigo-300 hover:shadow-md dark:bg-zinc-900/50 dark:border-zinc-700 dark:hover:border-indigo-500/50'
-                            }`}
-                          >
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h4 className="font-bold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                                  {u.fullName}
-                                </h4>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{u.email}</p>
-                              </div>
-                              {u.statusFlag === "flagged" || u.isBlocked ? (
-                                <span className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wider">
-                                  {u.isBlocked ? 'Blocked' : 'Flagged'}
-                                </span>
-                              ) : (
-                                <span className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wider">
-                                  Active
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); handleBlockUser(u._id); }}
-                                className="flex-1 flex justify-center items-center py-2 bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-lg transition-colors"
-                              >
-                                <Ban className="w-3 h-3 mr-1.5" /> Toggle Block
-                              </button>
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); handleDeleteUser(u._id); }}
-                                className="flex-1 flex justify-center items-center py-2 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 text-xs font-bold rounded-lg transition-colors border border-red-100 dark:border-transparent"
-                              >
-                                <Trash2 className="w-3 h-3 mr-1.5" /> Delete
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
                   </div>
-
-                  {/* User History Details */}
-                  <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-200 dark:border-zinc-700/50 flex flex-col h-[600px]">
-                    <div className="p-5 border-b border-gray-200 dark:border-zinc-700 bg-gray-50/50 dark:bg-zinc-900/50 rounded-t-2xl">
-                      <h3 className="text-lg font-bold flex items-center gap-2 text-gray-900 dark:text-white truncate">
-                        <Activity className="w-5 h-5 text-purple-500" /> 
-                        {selectedUser ? `${selectedUser.fullName}'s Profile` : 'User Details'}
-                      </h3>
-                    </div>
-                    
-                    <div className="flex-1 p-5 overflow-y-auto">
-                      {history && selectedUser ? (
-                        <div className="space-y-6 animate-in fade-in duration-300">
-                          
-                          <div className="grid grid-cols-2 gap-3 mb-6">
-                            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800/30">
-                              <p className="text-[10px] uppercase font-bold text-blue-500 mb-1 tracking-wider">Balance</p>
-                              <p className="text-xl font-extrabold text-blue-700 dark:text-blue-300">Rs. {Number(selectedUser.balance || 0).toLocaleString()}</p>
-                            </div>
-                            <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-100 dark:border-purple-800/30">
-                              <p className="text-[10px] uppercase font-bold text-purple-500 mb-1 tracking-wider">Transactions</p>
-                              <p className="text-xl font-extrabold text-purple-700 dark:text-purple-300">{history.transactions.length}</p>
-                            </div>
-                          </div>
-
-                          <div>
-                            <h4 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3 flex items-center justify-between border-b border-gray-200 dark:border-zinc-700 pb-2">
-                              Recent Transactions
-                            </h4>
-                            {history.transactions.length === 0 ? (
-                              <p className="text-xs text-gray-500 dark:text-gray-400 italic">No transactions found.</p>
-                            ) : (
-                              <div className="space-y-2">
-                                {history.transactions.slice(0, 10).map((tx) => (
-                                  <div key={tx._id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-zinc-900/50 rounded-lg border border-gray-100 dark:border-zinc-800">
-                                    <div>
-                                      <p className="text-sm font-bold capitalize">{tx.type}</p>
-                                      <p className="text-[10px] text-gray-500 mt-0.5">{formatDate(tx)}</p>
-                                    </div>
-                                    <div className="text-right">
-                                      <p className="text-sm font-extrabold">Rs. {Number(tx.amount).toLocaleString()}</p>
-                                      <p className={`text-[10px] font-bold uppercase mt-0.5 ${tx.status === 'completed' ? 'text-green-500' : 'text-orange-500'}`}>
-                                        {tx.status}
-                                      </p>
-                                    </div>
-                                  </div>
-                                ))}
+                  
+                  <div className="flex-1 overflow-y-auto custom-scrollbar">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50/50 dark:bg-zinc-800/50 sticky top-0 z-10 backdrop-blur-md">
+                        <tr>
+                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">User Details</th>
+                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Bank Entity</th>
+                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Status</th>
+                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50 dark:divide-zinc-800">
+                        {filteredUsers.map((u) => (
+                          <tr 
+                            key={u.id} 
+                            onClick={() => setSelectedUser(u)}
+                            className="group hover:bg-slate-50/50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer"
+                          >
+                            <td className="px-8 py-4">
+                              <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center font-black text-indigo-600">
+                                  {u.fullName?.charAt(0)}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-bold text-slate-900 dark:text-white truncate">{u.fullName}</p>
+                                  <p className="text-xs text-slate-400 truncate">{u.email}</p>
+                                </div>
                               </div>
-                            )}
-                          </div>
-
-                        </div>
-                      ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 dark:text-gray-400 py-10 opacity-60">
-                          <Search className="w-16 h-16 mb-4 text-gray-300 dark:text-zinc-700" />
-                          <p className="text-sm font-medium">Select a user from the list<br/>to inspect their complete history.</p>
-                        </div>
-                      )}
-                    </div>
+                            </td>
+                            <td className="px-8 py-4">
+                              <div className="text-xs font-bold text-slate-600 dark:text-zinc-400">
+                                {u.bankName}
+                              </div>
+                            </td>
+                            <td className="px-8 py-4">
+                              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${u.isBlocked ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                {u.isBlocked ? 'Suspended' : 'Active'}
+                              </span>
+                            </td>
+                            <td className="px-8 py-4 text-right">
+                              <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                                <button 
+                                  onClick={() => handleBlockUser(u.id)} 
+                                  className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl"
+                                  title="Suspend"
+                                >
+                                  <UserX className="w-5 h-5" />
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteUser(u.id)} 
+                                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-5 h-5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
+
+                {/* Bank Management - Capsule Style */}
+                <div className="space-y-4 shrink-0">
+                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-400 ml-1">Managed Institutions</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {[...new Set(users.map(u => u.bankName))].map((bank) => (
+                      <button
+                        key={bank}
+                        onClick={() => setSelectedBank(selectedBank === bank ? null : bank)}
+                        className={`px-4 py-3 rounded-2xl shadow-sm border flex items-center justify-between group transition-all text-left ${selectedBank === bank ? 'bg-indigo-600 border-indigo-600 shadow-lg shadow-indigo-500/20' : 'bg-white dark:bg-zinc-900 border-slate-100 dark:border-zinc-800 hover:border-indigo-500/30'}`}
+                      >
+                        <div className="flex items-center gap-3 overflow-hidden">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${selectedBank === bank ? 'bg-white/20 text-white' : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600'}`}>
+                            <Landmark className="w-5 h-5" />
+                          </div>
+                          <div className="overflow-hidden">
+                            <h4 className={`text-sm font-black truncate ${selectedBank === bank ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{bank}</h4>
+                            <p className={`text-[10px] font-bold uppercase tracking-widest truncate ${selectedBank === bank ? 'text-indigo-100' : 'text-slate-400'}`}>
+                              {users.filter(u => u.bankName === bank).length} Users
+                            </p>
+                          </div>
+                        </div>
+                        {selectedBank === bank && <CheckCircle2 className="w-5 h-5 text-white shrink-0 ml-2" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Side Logs & Alerts (4 Columns) - Confined Scroll */}
+              <div className="col-span-12 xl:col-span-4 h-full min-h-0 flex flex-col gap-6">
+                {/* Security Feed */}
+                <div className="bg-rose-600 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden shrink-0 h-1/2">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+                  <h3 className="text-xl font-black mb-6 flex items-center gap-3">
+                    <ShieldAlert className="w-6 h-6" /> Security Alerts
+                  </h3>
+                  <div className="h-[calc(100%-60px)] overflow-y-auto custom-scrollbar pr-2 space-y-4">
+                    {securityEvents.map((ev) => (
+                      <div key={ev.id} className="bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex items-start gap-4 shrink-0">
+                        <div className="p-2 bg-rose-500 rounded-lg shrink-0">
+                          <AlertTriangle className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm truncate">{ev.type}</p>
+                          <p className="text-xs opacity-70 truncate">{ev.details}</p>
+                          <p className="text-[10px] font-black uppercase mt-1 opacity-50">User ID: #{ev.userId}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Live Audit Logs */}
+                <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-zinc-800 flex-1 flex flex-col overflow-hidden h-1/2">
+                  <div className="p-8 border-b border-slate-50 dark:border-zinc-800 flex justify-between items-center shrink-0">
+                    <h3 className="text-xl font-black flex items-center gap-3">
+                      <Activity className="w-6 h-6 text-amber-500" /> Audit Logs
+                    </h3>
+                    <button 
+                      onClick={() => setShowClearLogsModal(true)}
+                      className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+                    {logs.map((log) => (
+                      <div key={log.id} className="flex gap-4 p-4 bg-slate-50/50 dark:bg-zinc-800/30 rounded-2xl hover:bg-white dark:hover:bg-zinc-800 transition-all border border-transparent hover:border-slate-100 dark:hover:border-zinc-700">
+                        <div className="w-2 h-2 mt-2 rounded-full bg-indigo-500 shrink-0"></div>
+                        <div>
+                          <p className="text-xs font-black text-slate-800 dark:text-white">{log.action}</p>
+                          <p className="text-[10px] text-slate-400 font-medium line-clamp-1">{log.ip} • {formatDate(log.createdAt).time}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="p-6 border-t border-slate-50 dark:border-zinc-800 shrink-0">
+                    <button 
+                      onClick={() => setShowFullLogs(true)}
+                      className="w-full py-3 bg-slate-50 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 font-bold text-xs rounded-2xl hover:bg-slate-100 dark:hover:bg-zinc-700 transition-all flex items-center justify-center gap-2"
+                    >
+                      View Full Live Logs <History className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </main>
+
+      {/* User Details Modal */}
+      {selectedUser && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-5xl h-[85vh] rounded-[3rem] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300 border border-white/20">
+            {/* Modal Header */}
+            <div className="p-8 bg-indigo-600 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-6">
+                <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center text-3xl font-black">
+                  {selectedUser.fullName?.charAt(0)}
+                </div>
+                <div>
+                  <h2 className="text-3xl font-black leading-tight">{selectedUser.fullName}</h2>
+                  <p className="text-indigo-100 font-bold flex items-center gap-2 opacity-80">
+                    <Mail className="w-4 h-4" /> {selectedUser.email} • ID: #{selectedUser.id}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedUser(null)} className="p-3 hover:bg-white/10 rounded-full transition-colors">
+                <X className="w-8 h-8" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-10 custom-scrollbar space-y-12">
+              {isUserLoading ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <Loader2 className="w-12 h-12 animate-spin text-indigo-600 mb-4" />
+                  <p className="text-slate-500 font-bold">Assembling user history...</p>
+                </div>
+              ) : userDetailHistory && (
+                <>
+                  {/* Account Overview */}
+                  <section>
+                    <h3 className="text-xl font-black mb-6 flex items-center gap-3 text-slate-800 dark:text-white">
+                      <ShieldCheck className="w-6 h-6 text-indigo-500" /> Account Identity
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                      <div className="bg-slate-50 dark:bg-zinc-800/50 p-6 rounded-3xl border border-slate-100 dark:border-zinc-800">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Banking Entity</p>
+                        <p className="text-lg font-black">{userDetailHistory.user.bankName}</p>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-zinc-800/50 p-6 rounded-3xl border border-slate-100 dark:border-zinc-800">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Account Number</p>
+                        <p className="text-lg font-black text-indigo-600">{userDetailHistory.user.accountNumber || "Not Linked"}</p>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-zinc-800/50 p-6 rounded-3xl border border-slate-100 dark:border-zinc-800">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Wallet Balance</p>
+                        <p className="text-lg font-black text-emerald-500">₹{Number(userDetailHistory.user.balance).toLocaleString()}</p>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-zinc-800/50 p-6 rounded-3xl border border-slate-100 dark:border-zinc-800">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Contact Number</p>
+                        <p className="text-lg font-black">{userDetailHistory.user.phone || "N/A"}</p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                    {/* Transaction History */}
+                    <section>
+                      <h3 className="text-xl font-black mb-6 flex items-center gap-3 text-slate-800 dark:text-white">
+                        <Receipt className="w-6 h-6 text-emerald-500" /> Recent Transactions
+                      </h3>
+                      <div className="bg-white dark:bg-zinc-800 rounded-3xl border border-slate-100 dark:border-zinc-700 overflow-hidden shadow-sm">
+                        <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
+                          {userDetailHistory.transactions.length > 0 ? (
+                            <table className="w-full text-left">
+                              <thead className="bg-slate-50/50 dark:bg-zinc-900/50 sticky top-0 z-10">
+                                <tr>
+                                  <th className="px-6 py-4 text-[9px] font-black uppercase text-slate-400">Action</th>
+                                  <th className="px-6 py-4 text-[9px] font-black uppercase text-slate-400 text-right">Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-50 dark:divide-zinc-700">
+                                {userDetailHistory.transactions.map((tx) => (
+                                  <tr key={tx.id}>
+                                    <td className="px-6 py-4">
+                                      <p className="text-sm font-bold capitalize">{tx.category || tx.type}</p>
+                                      <p className="text-[10px] text-slate-400">{formatDate(tx.createdAt).date}</p>
+                                    </td>
+                                    <td className={`px-6 py-4 text-right font-black ${tx.type === 'credit' ? 'text-emerald-500' : 'text-slate-800 dark:text-white'}`}>
+                                      {tx.type === 'credit' ? '+' : '-'} ₹{Number(tx.amount).toLocaleString()}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <div className="p-10 text-center text-slate-400 font-bold text-sm">No transaction history found</div>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+
+                    {/* Access History */}
+                    <section>
+                      <h3 className="text-xl font-black mb-6 flex items-center gap-3 text-slate-800 dark:text-white">
+                        <ShieldQuestion className="w-6 h-6 text-amber-500" /> Login & Access Logs
+                      </h3>
+                      <div className="bg-white dark:bg-zinc-800 rounded-3xl border border-slate-100 dark:border-zinc-700 overflow-hidden shadow-sm">
+                        <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
+                          {userDetailHistory.logs.length > 0 ? (
+                            <table className="w-full text-left">
+                              <thead className="bg-slate-50/50 dark:bg-zinc-900/50 sticky top-0 z-10">
+                                <tr>
+                                  <th className="px-6 py-4 text-[9px] font-black uppercase text-slate-400">Activity</th>
+                                  <th className="px-6 py-4 text-[9px] font-black uppercase text-slate-400 text-right">Timestamp</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-50 dark:divide-zinc-700">
+                                {userDetailHistory.logs.map((log) => (
+                                  <tr key={log.id}>
+                                    <td className="px-6 py-4">
+                                      <p className="text-sm font-bold">{log.action}</p>
+                                      <p className="text-[10px] text-slate-400">{log.ip}</p>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                      <p className="text-xs font-bold text-slate-500">{formatDate(log.createdAt).date}</p>
+                                      <p className="text-[10px] text-slate-400">{formatDate(log.createdAt).time}</p>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <div className="p-10 text-center text-slate-400 font-bold text-sm">No access logs available</div>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                </>
               )}
             </div>
           </div>
-        ) : null}
-      </main>
+        </div>
+      )}
+
+      {/* Clear Logs Modal */}
+      {showClearLogsModal && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-8 bg-rose-600 text-white flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-white/10 rounded-2xl">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-xl font-black">Verify Identity</h4>
+                  <p className="text-xs opacity-80 uppercase tracking-widest font-bold">Admin Clearance Required</p>
+                </div>
+              </div>
+              <button onClick={() => setShowClearLogsModal(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleClearLogs} className="p-8 space-y-6">
+              <div className="bg-rose-50 dark:bg-rose-900/20 p-6 rounded-[2rem] border border-rose-100 dark:border-rose-900/30">
+                <div className="flex gap-4">
+                  <AlertTriangle className="w-10 h-10 text-rose-600 shrink-0" />
+                  <p className="text-sm font-medium text-rose-900 dark:text-rose-400 leading-relaxed">
+                    Warning: This action will permanently erase all system logs and security history. This cannot be undone.
+                  </p>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Admin Secret PIN (7-Digits)</label>
+                <div className="relative">
+                  <input 
+                    type="password"
+                    maxLength={7}
+                    value={adminPin}
+                    onChange={(e) => setAdminPin(e.target.value)}
+                    className="w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-zinc-800 border-none text-slate-800 dark:text-white text-2xl font-black tracking-[0.4em] focus:ring-2 focus:ring-rose-500 outline-none text-center"
+                    placeholder="•••••••"
+                    required
+                  />
+                </div>
+              </div>
+              
+              <button 
+                disabled={isDeletingLogs || adminPin.length < 7}
+                className="w-full py-5 bg-rose-600 text-white rounded-2xl font-black shadow-xl shadow-rose-500/20 hover:bg-rose-700 transition-all disabled:opacity-50 flex items-center justify-center gap-3 active:scale-95"
+              >
+                {isDeletingLogs ? <Loader2 className="w-6 h-6 animate-spin" /> : "Verify Secret & Clear Logs"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

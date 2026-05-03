@@ -27,7 +27,7 @@ export default function BalanceCard({ balance, user }) {
             </h1>
           </div>
           <div className="bg-white/20 backdrop-blur-md px-4 py-2 rounded-full text-xs font-bold tracking-widest uppercase border border-white/10 shadow-sm">
-            {user?.statusFlag === 'active' ? 'Active' : 'Restricted'}
+            {['blocked', 'flagged'].includes(user?.statusFlag) ? 'Restricted' : 'Active'}
           </div>
         </div>
         

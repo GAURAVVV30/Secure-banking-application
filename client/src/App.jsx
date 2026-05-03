@@ -4,15 +4,17 @@ import RegisterPage from "./pages/RegisterPage.jsx";
 import UserDashboard from "./pages/UserDashboard.jsx";
 import LoanConfirm from "./pages/LoanConfirm.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
+import PaymentPage from "./pages/PaymentPage.jsx";
+import TransactionsPage from "./pages/TransactionsPage.jsx";
+import LoansPage from "./pages/LoansPage.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
+import { BankingProvider } from "./context/BankingContext.jsx";
 import { ThemeProvider } from "./context/ThemeContext.jsx";
-import { Loader2 } from "lucide-react";
+import DashboardLayout from "./components/DashboardLayout.jsx";
 
 function PrivateRoute({ children, role }) {
   const { user, isLoading } = useAuth();
-  
-  if (isLoading) return null; // Don't redirect while loading
-  
+  if (isLoading) return null;
   if (!user) return <Navigate to="/" replace />;
   if (role && user.role !== role) return <Navigate to="/" replace />;
   return children;
@@ -39,22 +41,24 @@ export default function App() {
       <Routes>
         <Route path="/" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        
+        {/* Protected Dashboard Routes with Persistent Layout */}
         <Route
-          path="/dashboard"
           element={
             <PrivateRoute role="user">
-              <UserDashboard />
+              <BankingProvider>
+                <DashboardLayout />
+              </BankingProvider>
             </PrivateRoute>
           }
-        />
-        <Route
-          path="/loan/confirm"
-          element={
-            <PrivateRoute role="user">
-              <LoanConfirm />
-            </PrivateRoute>
-          }
-        />
+        >
+          <Route path="/dashboard" element={<UserDashboard />} />
+          <Route path="/transactions" element={<TransactionsPage />} />
+          <Route path="/loans" element={<LoansPage />} />
+          <Route path="/loan/confirm" element={<LoanConfirm />} />
+          <Route path="/payments/:type" element={<PaymentPage />} />
+        </Route>
+
         <Route
           path="/admin"
           element={

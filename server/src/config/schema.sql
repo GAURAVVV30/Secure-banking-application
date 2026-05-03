@@ -41,6 +41,11 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='last_login_at') THEN 
         ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
     END IF;
+
+    -- Fix existing NULL balances and enforce NOT NULL
+    UPDATE users SET balance = 0 WHERE balance IS NULL;
+    ALTER TABLE users ALTER COLUMN balance SET NOT NULL;
+    ALTER TABLE users ALTER COLUMN balance SET DEFAULT 0;
 END $$;
 
 CREATE TABLE IF NOT EXISTS transactions (
@@ -68,6 +73,13 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='flag_reason') THEN 
         ALTER TABLE transactions ADD COLUMN flag_reason TEXT DEFAULT '';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='transactions' AND column_name='category') THEN 
+        ALTER TABLE transactions ADD COLUMN category VARCHAR(50) DEFAULT 'transfer';
+        -- Migrate existing types to categories and set type to credit/debit
+        UPDATE transactions SET category = type;
+        UPDATE transactions SET type = 'credit' WHERE category = 'credit';
+        UPDATE transactions SET type = 'debit' WHERE category != 'credit';
     END IF;
 END $$;
 
@@ -130,6 +142,14 @@ CREATE TABLE IF NOT EXISTS loans (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Migration for loans table
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='loans' AND column_name='loan_type') THEN 
+        ALTER TABLE loans ADD COLUMN loan_type VARCHAR(255) DEFAULT 'Personal';
+    END IF;
+END $$;
 
 -- Ensure ID columns have correct sequences (fixes issues if tables were created without SERIAL)
 DO $$ 

@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { query } from "../config/db.js";
 import { mapUser, mapTransaction, mapLoan, mapSecurityEvent, mapUserLog } from "../utils/mapper.js";
 
@@ -6,6 +7,25 @@ const deleteUserData = async (userId) => {
   await query("DELETE FROM loans WHERE user_id = $1", [userId]);
   await query("DELETE FROM security_events WHERE user_id = $1", [userId]);
   await query("DELETE FROM user_logs WHERE user_id = $1", [userId]);
+  await query("DELETE FROM virtual_cards WHERE user_id = $1", [userId]);
+};
+
+export const getDashboardStats = async (req, res) => {
+  try {
+    const totalUsers = await query("SELECT COUNT(*) FROM users WHERE role = 'user'");
+    const activeBanks = await query("SELECT COUNT(DISTINCT bank_name) FROM users WHERE role = 'user'");
+    const flaggedUsers = await query("SELECT COUNT(*) FROM users WHERE is_blocked = true OR is_temporally_flagged = true");
+    const totalLogs = await query("SELECT COUNT(*) FROM user_logs");
+
+    return res.json({
+      totalUsers: parseInt(totalUsers.rows[0].count),
+      activeBanks: parseInt(activeBanks.rows[0].count),
+      flaggedUsers: parseInt(flaggedUsers.rows[0].count),
+      totalLogs: parseInt(totalLogs.rows[0].count)
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
 };
 
 export const getUsersByBank = async (req, res) => {
@@ -127,7 +147,6 @@ export const getSecurityFeed = async (_req, res) => {
   }
 };
 
-
 export const blockUser = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -164,6 +183,40 @@ export const deleteUser = async (req, res) => {
   }
 };
 
+export const clearLogs = async (req, res) => {
+  try {
+    const { pin } = req.body;
+    const adminLoginPin = String(process.env.ADMIN_LOGIN_PIN || "5896547").trim();
+    
+    if (String(pin).trim() !== adminLoginPin) {
+      return res.status(403).json({ message: "Invalid Admin Secret PIN" });
+    }
+
+    await query("DELETE FROM user_logs");
+    
+    return res.json({ message: "System audit logs cleared successfully" });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+export const getAllLogs = async (req, res) => {
+  try {
+    const logsResult = await query(
+      `SELECT l.*, u.email as user_email
+       FROM user_logs l
+       LEFT JOIN users u ON l.user_id = u.id
+       ORDER BY l.created_at DESC`
+    );
+    return res.json(logsResult.rows.map(l => ({
+      ...mapUserLog(l),
+      userEmail: l.user_email
+    })));
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 export const deleteBank = async (req, res) => {
   try {
     const { bankName } = req.params;
@@ -172,8 +225,6 @@ export const deleteBank = async (req, res) => {
 
     const userIds = usersResult.rows.map(u => u.id);
     
-    // Postgres doesn't support $1 = ANY($2) as easily as IN (...) with multiple params without some tricks, 
-    // but we can use WHERE user_id = ANY($1) with an array.
     await query("DELETE FROM transactions WHERE sender_id = ANY($1) OR receiver_id = ANY($1)", [userIds]);
     await query("DELETE FROM loans WHERE user_id = ANY($1)", [userIds]);
     await query("DELETE FROM security_events WHERE user_id = ANY($1)", [userIds]);

@@ -22,8 +22,8 @@ export const mapUser = (u) => {
     isBlocked: u.is_blocked,
     statusFlag: u.status_flag,
     lastLoginAt: u.last_login_at,
-    createdAt: u.created_at || u.createdAt || new Date(),
-    updatedAt: u.updated_at || u.updatedAt || u.created_at || u.createdAt || new Date()
+    createdAt: u.created_at || u.createdAt,
+    updatedAt: u.updated_at || u.updatedAt || u.created_at || u.createdAt
   };
 };
 
@@ -36,12 +36,13 @@ export const mapTransaction = (t) => {
     receiver: t.receiver_id,
     amount: parseFloat(t.amount),
     type: t.type,
+    category: t.category,
     source: t.source,
     merchantName: t.merchant_name,
     status: t.status,
     flagReason: t.flag_reason,
-    createdAt: t.created_at || t.createdAt || new Date(),
-    updatedAt: t.updated_at || t.updatedAt || t.created_at || t.createdAt || new Date()
+    createdAt: t.created_at || t.createdAt,
+    updatedAt: t.updated_at || t.updatedAt || t.created_at || t.createdAt
   };
 };
 
@@ -55,8 +56,8 @@ export const mapVirtualCard = (c) => {
     cvv: c.cvv,
     expiry: c.expiry,
     status: c.status,
-    createdAt: c.created_at || c.createdAt || new Date(),
-    updatedAt: c.updated_at || c.updatedAt || c.created_at || c.createdAt || new Date()
+    createdAt: c.created_at || c.createdAt,
+    updatedAt: c.updated_at || c.updatedAt || c.created_at || c.createdAt
   };
 };
 
@@ -69,9 +70,10 @@ export const mapLoan = (l) => {
     amount: parseFloat(l.amount),
     months: l.months,
     monthlyPayment: parseFloat(l.monthly_payment),
+    loanType: l.loan_type,
     status: l.status,
-    createdAt: l.created_at || l.createdAt || new Date(),
-    updatedAt: l.updated_at || l.updatedAt || l.created_at || l.createdAt || new Date()
+    createdAt: l.created_at || l.createdAt,
+    updatedAt: l.updated_at || l.updatedAt || l.created_at || l.createdAt
   };
 };
 
@@ -84,8 +86,8 @@ export const mapSecurityEvent = (e) => {
     type: e.type,
     details: e.details,
     severity: e.severity,
-    createdAt: e.created_at || e.createdAt || new Date(),
-    updatedAt: e.updated_at || e.updatedAt || e.created_at || e.createdAt || new Date()
+    createdAt: e.created_at || e.createdAt,
+    updatedAt: e.updated_at || e.updatedAt || e.created_at || e.createdAt
   };
 };
 
@@ -100,6 +102,6 @@ export const mapUserLog = (log) => {
     ip: log.ip,
     userAgent: log.user_agent,
     deviceType: log.device_type,
-    createdAt: log.created_at || log.createdAt || new Date()
+    createdAt: log.created_at || log.createdAt
   };
 };
