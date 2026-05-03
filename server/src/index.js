@@ -4,7 +4,7 @@ import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 import { Server } from "socket.io";
-import { connectDB } from "./config/db.js";
+import { connectDB, initSchema } from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import bankingRoutes from "./routes/bankingRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
@@ -14,7 +14,7 @@ import { ensureAdminUser } from "./services/adminSeed.js";
 
 const app = express();
 const server = http.createServer(app);
-app.set("trust proxy", true);
+// app.set("trust proxy", true); // Causes issues with express-rate-limit in some environments
 
 const rawOrigins =
   process.env.FRONTEND_ORIGIN || "http://localhost:5173,http://127.0.0.1:5173";
@@ -56,6 +56,9 @@ app.use("/api/user", userRoutes);
 
 const port = Number(process.env.PORT) || 5000;
 connectDB()
+  .then(() => {
+    return initSchema();
+  })
   .then(() => {
     return ensureAdminUser();
   })

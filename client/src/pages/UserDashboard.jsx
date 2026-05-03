@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -7,6 +7,7 @@ import BalanceCard from "../components/BalanceCard.jsx";
 import VirtualCardManager from "../components/VirtualCardManager.jsx";
 import ProfileSettings from "../components/ProfileSettings.jsx";
 import Modal from "../components/Modal.jsx";
+import { Loader2, RefreshCw } from "lucide-react";
 
 export default function UserDashboard() {
   const { user, logout } = useAuth();
@@ -15,6 +16,7 @@ export default function UserDashboard() {
   // Data State
   const [balance, setBalance] = useState(0);
   const [transactions, setTransactions] = useState([]);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   
   // UI State
   const [activeModal, setActiveModal] = useState(null); // 'cards', 'settings', null
@@ -29,28 +31,31 @@ export default function UserDashboard() {
   const [loanAmount, setLoanAmount] = useState("");
   const [loanMonths, setLoanMonths] = useState("");
 
-  const fetchBalance = async () => {
+  const fetchBalance = useCallback(async () => {
     try {
       const { data } = await api.get("/banking/balance");
-      setBalance(data.balance);
+      setBalance(data.balance ?? 0);
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
     try {
       const { data } = await api.get("/banking/history");
       setTransactions(data.transactions || []);
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchBalance();
-    fetchHistory();
-  }, []);
+    const loadData = async () => {
+      await Promise.all([fetchBalance(), fetchHistory()]);
+      setIsInitialLoading(false);
+    };
+    loadData();
+  }, [fetchBalance, fetchHistory]);
 
   const transfer = async (e) => {
     e.preventDefault();
@@ -119,9 +124,19 @@ export default function UserDashboard() {
 
   const renderDirection = (tx) => {
     if (tx.type === "credit") return "CREDIT";
-    if (String(tx.sender?._id) === String(user?.id)) return "DEBIT";
+    // Using IDs for reliable detection
+    if (tx.senderId && String(tx.senderId) === String(user?.id)) return "DEBIT";
+    if (tx.sender?._id && String(tx.sender?._id) === String(user?.id)) return "DEBIT";
     return "CREDIT";
   };
+
+  if (isInitialLoading) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-slate-50 dark:bg-zinc-950">
+        <Loader2 className="w-12 h-12 animate-spin text-indigo-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 transition-colors duration-300 font-sans flex items-start justify-center p-6">
@@ -133,8 +148,9 @@ export default function UserDashboard() {
         <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-8 pb-8">
           <div className="flex justify-between items-center">
             <h2 className="text-3xl font-bold tracking-tight text-slate-800 dark:text-white capitalize">
-              Welcome, {user?.fullName.split(' ')[0]}
+              Welcome, {user?.fullName?.split(' ')[0] || 'User'}
             </h2>
+
             {message && (
               <div className="px-5 py-2.5 bg-indigo-100/80 dark:bg-indigo-900/50 backdrop-blur-md border border-indigo-200/50 dark:border-indigo-700/50 text-indigo-800 dark:text-indigo-200 rounded-2xl text-sm font-semibold shadow-lg animate-pulse">
                 {message}
@@ -145,11 +161,9 @@ export default function UserDashboard() {
           <BalanceCard balance={balance} user={user} />
           
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-            {/* Quick Actions */}
             <div className="xl:col-span-2 space-y-8">
               <h3 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Quick Actions</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Transfer Card */}
                 <div className="bg-white/60 dark:bg-zinc-800/60 backdrop-blur-xl border border-white/20 dark:border-zinc-700/50 rounded-3xl p-6 shadow-xl transition-all hover:shadow-2xl hover:bg-white/80 dark:hover:bg-zinc-800/80">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="p-3 bg-indigo-100 dark:bg-indigo-900/50 rounded-xl text-indigo-600 dark:text-indigo-400">
@@ -196,7 +210,6 @@ export default function UserDashboard() {
                   </form>
                 </div>
 
-                {/* Credit Card */}
                 <div className="bg-white/60 dark:bg-zinc-800/60 backdrop-blur-xl border border-white/20 dark:border-zinc-700/50 rounded-3xl p-6 shadow-xl transition-all hover:shadow-2xl hover:bg-white/80 dark:hover:bg-zinc-800/80">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="p-3 bg-green-100 dark:bg-green-900/50 rounded-xl text-green-600 dark:text-green-400">
@@ -231,7 +244,6 @@ export default function UserDashboard() {
                   </form>
                 </div>
 
-                {/* Apply Loan */}
                 <div className="md:col-span-2 bg-white/60 dark:bg-zinc-800/60 backdrop-blur-xl border border-white/20 dark:border-zinc-700/50 rounded-3xl p-6 shadow-xl transition-all hover:shadow-2xl hover:bg-white/80 dark:hover:bg-zinc-800/80">
                    <div className="flex items-center gap-3 mb-4">
                     <div className="p-3 bg-purple-100 dark:bg-purple-900/50 rounded-xl text-purple-600 dark:text-purple-400">
@@ -268,17 +280,15 @@ export default function UserDashboard() {
                     </button>
                   </form>
                 </div>
-
               </div>
             </div>
 
-            {/* Recent Transactions */}
             <div className="xl:col-span-1">
               <div className="bg-white/60 dark:bg-zinc-800/60 backdrop-blur-xl border border-white/20 dark:border-zinc-700/50 rounded-3xl p-6 shadow-xl h-full flex flex-col transition-all">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">Recent Transactions</h3>
-                  <button onClick={fetchHistory} className="text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 text-sm font-semibold transition-colors bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg">
-                    Refresh
+                  <button onClick={fetchHistory} className="text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 text-sm font-semibold transition-colors bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg flex items-center">
+                    <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Refresh
                   </button>
                 </div>
                 
@@ -292,7 +302,7 @@ export default function UserDashboard() {
                     {transactions.slice(0, 8).map((tx) => {
                       const direction = renderDirection(tx);
                       return (
-                        <div key={tx._id} className="flex justify-between items-center p-4 bg-white/40 dark:bg-zinc-900/40 backdrop-blur-sm rounded-2xl hover:bg-white/80 dark:hover:bg-zinc-700/50 transition-colors border border-white/30 dark:border-zinc-700/30">
+                        <div key={tx._id || tx.id} className="flex justify-between items-center p-4 bg-white/40 dark:bg-zinc-900/40 backdrop-blur-sm rounded-2xl hover:bg-white/80 dark:hover:bg-zinc-700/50 transition-colors border border-white/30 dark:border-zinc-700/30">
                           <div className="flex items-center gap-4">
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center ${direction === 'CREDIT' ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'}`}>
                               {direction === 'CREDIT' ? (
@@ -302,12 +312,12 @@ export default function UserDashboard() {
                               )}
                             </div>
                             <div>
-                              <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm">{tx.type.charAt(0).toUpperCase() + tx.type.slice(1)}</p>
-                              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{new Date(tx.createdAt).toLocaleDateString()}</p>
+                              <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm">{tx.type?.charAt(0).toUpperCase() + tx.type?.slice(1)}</p>
+                              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{tx.createdAt ? new Date(tx.createdAt).toLocaleDateString() : '-'}</p>
                             </div>
                           </div>
                           <div className={`font-bold text-sm ${direction === 'CREDIT' ? 'text-green-600 dark:text-green-400' : 'text-slate-800 dark:text-zinc-200'}`}>
-                            {direction === 'CREDIT' ? '+' : '-'} Rs.{Number(tx.amount).toLocaleString()}
+                            {direction === 'CREDIT' ? '+' : '-'} Rs.{Number(tx.amount || 0).toLocaleString()}
                           </div>
                         </div>
                       );

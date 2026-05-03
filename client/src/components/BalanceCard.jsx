@@ -8,7 +8,8 @@ export default function BalanceCard({ balance, user }) {
         <div className="flex justify-between items-start">
           <div>
             <p className="text-indigo-100 font-medium mb-2 opacity-90 text-sm uppercase tracking-wider">Available Balance</p>
-            <h1 className="text-5xl font-bold tracking-tight">Rs. {balance.toLocaleString()}</h1>
+            <h1 className="text-5xl font-bold tracking-tight">Rs. {(balance ?? 0).toLocaleString()}</h1>
+
           </div>
           <div className="bg-white/20 backdrop-blur-md px-4 py-2 rounded-full text-xs font-bold tracking-widest uppercase border border-white/10 shadow-sm">
             {user?.statusFlag === 'active' ? 'Active' : 'Restricted'}

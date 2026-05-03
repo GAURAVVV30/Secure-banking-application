@@ -1,11 +1,17 @@
 import bcrypt from "bcryptjs";
-import User from "../models/User.js";
+import { query } from "../config/db.js";
 import { createUserLog } from "../services/auditService.js";
+import { mapUser } from "../utils/mapper.js";
 
 export const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("-password -pinHash");
+    const result = await query("SELECT * FROM users WHERE id = $1", [req.user.id]);
+    const user = mapUser(result.rows[0]);
     if (!user) return res.status(404).json({ message: "User not found" });
+    
+    delete user.password;
+    delete user.pinHash;
+    
     return res.json({ user });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -31,26 +37,21 @@ export const updateContact = async (req, res) => {
       return res.status(400).json({ message: "Phone number must be exactly 10 digits" });
     }
 
-    const existingUser = await User.findOne({ email: normalizedEmail, _id: { $ne: req.user._id } });
-    if (existingUser) {
+    const existingResult = await query("SELECT id FROM users WHERE email = $1 AND id != $2", [normalizedEmail, req.user.id]);
+    if (existingResult.rows.length > 0) {
       return res.status(400).json({ message: "Email already in use by another account" });
     }
 
-    const user = await User.findById(req.user._id);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    user.email = normalizedEmail;
-    user.phone = normalizedPhone;
-    await user.save();
+    await query("UPDATE users SET email = $1, phone = $2 WHERE id = $3", [normalizedEmail, normalizedPhone, req.user.id]);
 
     await createUserLog({
-      user: user._id,
+      user: req.user.id,
       action: "update_contact",
-      metadata: { email: user.email, phone: user.phone },
+      metadata: { email: normalizedEmail, phone: normalizedPhone },
       req
     });
 
-    return res.json({ message: "Contact information updated successfully", user: { email: user.email, phone: user.phone } });
+    return res.json({ message: "Contact information updated successfully", user: { email: normalizedEmail, phone: normalizedPhone } });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -68,7 +69,8 @@ export const updatePassword = async (req, res) => {
       return res.status(400).json({ message: "New password must be at least 6 characters" });
     }
 
-    const user = await User.findById(req.user._id);
+    const result = await query("SELECT password FROM users WHERE id = $1", [req.user.id]);
+    const user = result.rows[0];
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const ok = await bcrypt.compare(String(currentPassword), user.password);
@@ -76,11 +78,11 @@ export const updatePassword = async (req, res) => {
       return res.status(403).json({ message: "Incorrect current password" });
     }
 
-    user.password = await bcrypt.hash(String(newPassword), 10);
-    await user.save();
+    const hashed = await bcrypt.hash(String(newPassword), 10);
+    await query("UPDATE users SET password = $1 WHERE id = $2", [hashed, req.user.id]);
 
     await createUserLog({
-      user: user._id,
+      user: req.user.id,
       action: "update_password",
       metadata: {},
       req

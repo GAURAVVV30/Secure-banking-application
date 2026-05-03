@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
-import User from "../models/User.js";
+import { query } from "../config/db.js";
+import { mapUser } from "../utils/mapper.js";
 
 export const authRequired = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
@@ -8,11 +9,17 @@ export const authRequired = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.auth = decoded;
-    const user = await User.findById(decoded.id).select("-password");
+    
+    const result = await query("SELECT * FROM users WHERE id = $1", [decoded.id]);
+    const user = mapUser(result.rows[0]);
+    
     if (!user) return res.status(401).json({ message: "Unauthorized" });
-    req.user = user;
+    
+    // Remove sensitive info from req.user
+    const { password, pinHash, ...safeUser } = user;
+    req.user = safeUser;
     next();
-  } catch {
+  } catch (error) {
     return res.status(401).json({ message: "Invalid token" });
   }
 };

@@ -6,15 +6,34 @@ import LoanConfirm from "./pages/LoanConfirm.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 import { ThemeProvider } from "./context/ThemeContext.jsx";
+import { Loader2 } from "lucide-react";
 
 function PrivateRoute({ children, role }) {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
+  
+  if (isLoading) return null; // Don't redirect while loading
+  
   if (!user) return <Navigate to="/" replace />;
   if (role && user.role !== role) return <Navigate to="/" replace />;
   return children;
 }
 
 export default function App() {
+  const { isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-zinc-950">
+        <div className="relative">
+          <div className="w-16 h-16 border-4 border-indigo-200 dark:border-indigo-900 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-indigo-600 rounded-full border-t-transparent animate-spin"></div>
+        </div>
+        <h2 className="mt-6 text-xl font-bold text-gray-800 dark:text-gray-100 animate-pulse">SecureBank</h2>
+        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Securing your session...</p>
+      </div>
+    );
+  }
+
   return (
     <ThemeProvider>
       <Routes>

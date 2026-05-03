@@ -110,17 +110,32 @@ export default function AdminDashboard() {
   };
 
   const formatTime = (item) => {
-    const source = item.createdAt || item.timestamp || item.updatedAt;
+    if (!item) return "-";
+    const source = item.createdAt || item.created_at || item.timestamp || item.updatedAt || item.updated_at;
     if (!source) return "-";
-    const date = new Date(source);
-    return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+    try {
+      const date = new Date(source);
+      if (isNaN(date.getTime())) return "-";
+      return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+    } catch (e) {
+      return "-";
+    }
   };
 
   const formatDate = (item) => {
-    const source = item.createdAt || item.timestamp || item.updatedAt;
+    if (!item) return "-";
+    const source = item.createdAt || item.created_at || item.timestamp || item.updatedAt || item.updated_at;
     if (!source) return "-";
-    return new Date(source).toLocaleDateString("en-GB");
+    try {
+      const date = new Date(source);
+      if (isNaN(date.getTime())) return "-";
+      return date.toLocaleDateString("en-GB");
+    } catch (e) {
+      return "-";
+    }
   };
+
+
 
   const getRowAction = (item) => item.action || item.type || "-";
   const getRowEmail = (item) => item.user?.email || item.metadata?.email || "-";
